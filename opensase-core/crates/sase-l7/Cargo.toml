@@ -1,0 +1,60 @@
+[package]
+name = "sase-l7"
+version = "0.1.0"
+edition = "2021"
+authors = ["OpenSASE Team"]
+description = "L7 Gateway Services - AuthZ, SWG, CASB, DLP"
+license = "Apache-2.0"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+
+# gRPC
+tonic = "0.11"
+prost = "0.12"
+prost-types = "0.12"
+
+# HTTP
+axum = "0.7"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Data structures
+dashmap = "5.5"
+bloomfilter = "1.0"
+lru = "0.12"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# OAuth/Auth
+oauth2 = "4.4"
+jsonwebtoken = "9"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# URL handling
+url = "2.5"
+urlencoding = "2.1"
+
+[build-dependencies]
+tonic-build = "0.11"
+
+[features]
+default = []
+casb-m365 = []
+casb-google = []
+casb-salesforce = []

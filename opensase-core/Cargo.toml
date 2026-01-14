@@ -22,6 +22,8 @@ members = [
     "crates/sase-resilience",
     "crates/sase-vpp",
     "crates/sase-ips",
+    "crates/sase-xds",
+    "crates/sase-l7",
 ]
 
 [workspace.package]
