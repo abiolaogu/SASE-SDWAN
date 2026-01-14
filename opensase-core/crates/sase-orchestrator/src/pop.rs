@@ -1,7 +1,9 @@
 //! PoP Definition and Types
+//!
+//! Defines Points of Presence (PoPs) deployed on dedicated servers.
 
 use serde::{Deserialize, Serialize};
-use crate::provider::CloudProvider;
+use crate::provider::{DedicatedProvider, CloudProvider};
 
 /// PoP Definition - Deployable unit
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,8 +319,9 @@ mod tests {
 
     #[test]
     fn test_pop_definition() {
-        let region = Region::new("us-east-1", "US East", Continent::NorthAmerica, 39.0, -77.0);
-        let pop = PopDefinition::new("pop-us-east-1", region, CloudProvider::Aws, PopTier::Core)
+        // Using Hetzner datacenter instead of hyperscaler
+        let region = Region::new("fsn1", "Falkenstein", Continent::Europe, 50.47, 12.37);
+        let pop = PopDefinition::new("pop-eu-fsn1", region, DedicatedProvider::Hetzner, PopTier::Core)
             .with_capacity(CapacitySpec::large())
             .with_service(ServiceConfig {
                 name: "gateway".into(),

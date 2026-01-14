@@ -1,10 +1,10 @@
 //! Global PoP Orchestrator (GPO)
 //!
-//! Manages 50+ global Points of Presence with:
-//! - Multi-cloud deployment (AWS, GCP, Azure, Vultr, etc.)
-//! - Anycast routing
+//! Manages 50+ global Points of Presence on dedicated servers:
+//! - Dedicated server deployment (Hetzner, OVH, Scaleway, Voxility, Equinix Metal)
+//! - Anycast routing with BGP
 //! - Automated failover
-//! - Terraform/Pulumi code generation
+//! - Terraform/API code generation
 //!
 //! # Architecture
 //!
@@ -21,15 +21,21 @@
 //! │                                  │                                     │
 //! │                                  ▼                                     │
 //! │  ┌───────────────────────────────────────────────────────────────┐    │
-//! │  │                        PoP Fleet                               │    │
+//! │  │                   DEDICATED SERVER FLEET                       │    │
 //! │  │                                                                │    │
-//! │  │  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐        │    │
-//! │  │  │ AWS │  │ GCP │  │Azure│  │Vultr│  │ DO  │  │Eqnx │  ...   │    │
-//! │  │  │ PoP │  │ PoP │  │ PoP │  │ PoP │  │ PoP │  │ PoP │        │    │
-//! │  │  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘        │    │
+//! │  │  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐            │    │
+//! │  │  │Hetzn.│  │  OVH │  │Scale │  │Voxil.│  │Equinx│  ...       │    │
+//! │  │  │ PoP  │  │ PoP  │  │ PoP  │  │ PoP  │  │ PoP  │            │    │
+//! │  │  └──────┘  └──────┘  └──────┘  └──────┘  └──────┘            │    │
 //! │  └───────────────────────────────────────────────────────────────┘    │
 //! └─────────────────────────────────────────────────────────────────────────┘
 //! ```
+//!
+//! # Dedicated Server Providers
+//!
+//! - **Tier 1 (Premium)**: Voxility (DDoS protection), Equinix Metal (bare metal)
+//! - **Tier 2 (Cost-Effective)**: OVH Cloud, Hetzner, Scaleway
+//! - **Tier 3 (Budget)**: Leaseweb, ServerHub, ReliableSite, PhoenixNap
 
 #![warn(missing_docs)]
 #![allow(dead_code)]
@@ -47,10 +53,11 @@ pub mod cost;
 pub mod capacity;
 
 pub use pop::{PopDefinition, PopTier, Region, CapacitySpec};
-pub use provider::CloudProvider;
+pub use provider::{DedicatedProvider, CloudProvider};  // CloudProvider is alias for backwards compat
 pub use orchestrator::Orchestrator;
 pub use pipeline::{LifecyclePipeline, LifecycleStage};
 pub use backbone::BackboneMesh;
 pub use config::ConfigManager;
 pub use cost::CostOptimizer;
 pub use capacity::CapacityPlanner;
+

@@ -1,144 +1,239 @@
-//! Cloud Provider Definitions
+//! Dedicated Server Provider Definitions
+//!
+//! OpenSASE uses dedicated physical servers only - no hyperscaler VMs.
+//! Supported providers: Voxility, OVH Cloud, Hetzner, Scaleway, etc.
 
 use serde::{Deserialize, Serialize};
 
-/// Supported cloud providers
+/// Supported dedicated server providers (no hyperscaler VMs)
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub enum CloudProvider {
-    // Tier 1 - Full featured
-    Aws,
-    Gcp,
-    Azure,
-    
-    // Tier 2 - Cost-optimized
-    Vultr,
-    DigitalOcean,
-    Linode,
-    Hetzner,
-    
-    // Tier 3 - Bare metal / Performance
+pub enum DedicatedProvider {
+    // Tier 1 - Premium Dedicated Servers
+    Voxility,
     EquinixMetal,
-    Packet,
+    
+    // Tier 2 - Cost-Effective Dedicated Servers  
     OvhCloud,
+    Hetzner,
+    Scaleway,
+    
+    // Tier 3 - Budget Dedicated Servers
+    Leaseweb,
+    ServerHub,
+    ReliableSite,
+    PhoenixNap,
 }
 
-impl CloudProvider {
+// Backwards compatibility alias
+pub type CloudProvider = DedicatedProvider;
+
+impl DedicatedProvider {
     /// Get tier
     pub fn tier(&self) -> ProviderTier {
         match self {
-            Self::Aws | Self::Gcp | Self::Azure => ProviderTier::Tier1,
-            Self::Vultr | Self::DigitalOcean | Self::Linode | Self::Hetzner => ProviderTier::Tier2,
-            Self::EquinixMetal | Self::Packet | Self::OvhCloud => ProviderTier::Tier3,
+            Self::Voxility | Self::EquinixMetal => ProviderTier::Tier1,
+            Self::OvhCloud | Self::Hetzner | Self::Scaleway => ProviderTier::Tier2,
+            Self::Leaseweb | Self::ServerHub | Self::ReliableSite | Self::PhoenixNap => ProviderTier::Tier3,
         }
     }
 
     /// Get Terraform provider name
     pub fn terraform_provider(&self) -> &'static str {
         match self {
-            Self::Aws => "aws",
-            Self::Gcp => "google",
-            Self::Azure => "azurerm",
-            Self::Vultr => "vultr",
-            Self::DigitalOcean => "digitalocean",
-            Self::Linode => "linode",
-            Self::Hetzner => "hcloud",
-            Self::EquinixMetal => "equinix",
-            Self::Packet => "packet",
             Self::OvhCloud => "ovh",
+            Self::Hetzner => "hcloud",
+            Self::Scaleway => "scaleway",
+            Self::EquinixMetal => "equinix",
+            Self::Voxility => "null",  // Custom provisioning via API
+            Self::Leaseweb => "null",
+            Self::ServerHub => "null",
+            Self::ReliableSite => "null",
+            Self::PhoenixNap => "pnap",
         }
     }
 
-    /// Get available regions
+    /// Get available datacenter locations
     pub fn regions(&self) -> Vec<&'static str> {
         match self {
-            Self::Aws => vec![
-                "us-east-1", "us-east-2", "us-west-1", "us-west-2",
-                "eu-west-1", "eu-west-2", "eu-central-1",
-                "ap-southeast-1", "ap-southeast-2", "ap-northeast-1",
+            Self::Voxility => vec![
+                "ams", "lon", "fra", "par", "buc", "sof", "waw",  // Europe
+                "nyc", "lax", "chi", "dal", "mia",                 // North America
+                "sgp", "hkg", "tyo",                               // Asia Pacific
             ],
-            Self::Gcp => vec![
-                "us-central1", "us-east1", "us-west1",
-                "europe-west1", "europe-west2",
-                "asia-east1", "asia-southeast1",
+            Self::OvhCloud => vec![
+                "gra", "sbg", "rbx", "bhs", "waw",                 // Europe
+                "sgp", "syd",                                       // Asia Pacific
+                "us-east-va", "us-west-or",                        // North America
             ],
-            Self::Azure => vec![
-                "eastus", "eastus2", "westus", "westus2",
-                "northeurope", "westeurope",
-                "southeastasia", "eastasia",
+            Self::Hetzner => vec![
+                "fsn1", "nbg1", "hel1",                            // Europe (Falkenstein, Nuremberg, Helsinki)
+                "ash",                                              // North America (Ashburn)
+                "hil",                                              // North America (Hillsboro)
             ],
-            Self::Vultr => vec![
-                "ewr", "ord", "dfw", "lax", "atl",
-                "ams", "lhr", "fra", "cdg",
-                "nrt", "sgp", "syd",
+            Self::Scaleway => vec![
+                "fr-par", "nl-ams", "pl-waw",                      // Europe
             ],
-            Self::DigitalOcean => vec![
-                "nyc1", "nyc3", "sfo1", "sfo3",
-                "ams3", "lon1", "fra1",
-                "sgp1", "blr1", "syd1",
+            Self::EquinixMetal => vec![
+                "am", "dc", "ny", "sv", "la", "da", "ch", "at",    // North America
+                "ld", "fr", "pa", "am",                            // Europe
+                "sg", "ty", "sy",                                   // Asia Pacific
+            ],
+            Self::Leaseweb => vec![
+                "ams", "fra", "lon", "sin", "hkg", "syd",
+                "wdc", "sfo", "dal",
+            ],
+            Self::PhoenixNap => vec![
+                "phx", "ash", "sgp", "ams",
             ],
             _ => vec!["default"],
         }
     }
 
+    /// All providers support BGP on dedicated servers
+    pub fn supports_bgp(&self) -> bool {
+        match self {
+            Self::Voxility | Self::EquinixMetal | Self::OvhCloud | Self::PhoenixNap => true,
+            Self::Hetzner | Self::Scaleway => true,  // Available on dedicated
+            _ => false,
+        }
+    }
+
     /// Check if supports anycast
     pub fn supports_anycast(&self) -> bool {
-        matches!(self, Self::Aws | Self::Gcp | Self::EquinixMetal)
+        matches!(self, Self::Voxility | Self::EquinixMetal | Self::OvhCloud)
     }
 
-    /// Check if supports BGP
-    pub fn supports_bgp(&self) -> bool {
-        matches!(self, Self::Aws | Self::Gcp | Self::EquinixMetal | Self::Vultr)
-    }
-
-    /// Get default instance type for capacity
-    pub fn instance_type(&self, vcpus: u32, memory_gb: u32) -> String {
+    /// Get recommended server configuration for capacity needs
+    pub fn server_config(&self, vcpus: u32, memory_gb: u32) -> ServerConfig {
         match self {
-            Self::Aws => {
-                if vcpus <= 2 { "t3.small".into() }
-                else if vcpus <= 4 { "c5.xlarge".into() }
-                else if vcpus <= 8 { "c5.2xlarge".into() }
-                else { "c5.4xlarge".into() }
+            Self::Hetzner => {
+                if vcpus <= 8 { ServerConfig::new("AX41-NVMe", 6, 64, 512) }
+                else if vcpus <= 16 { ServerConfig::new("AX101", 12, 128, 2048) }
+                else { ServerConfig::new("AX161", 32, 256, 4096) }
             }
-            Self::Gcp => {
-                if vcpus <= 2 { "e2-small".into() }
-                else if vcpus <= 4 { "n2-standard-4".into() }
-                else { "n2-standard-8".into() }
+            Self::OvhCloud => {
+                if vcpus <= 8 { ServerConfig::new("Advance-1", 8, 64, 500) }
+                else if vcpus <= 16 { ServerConfig::new("Advance-2", 16, 128, 1000) }
+                else { ServerConfig::new("Scale-1", 32, 256, 2000) }
             }
-            Self::Azure => {
-                if vcpus <= 2 { "Standard_B2s".into() }
-                else if vcpus <= 4 { "Standard_D4s_v3".into() }
-                else { "Standard_D8s_v3".into() }
+            Self::Scaleway => {
+                if vcpus <= 8 { ServerConfig::new("CORE-8-S", 8, 32, 500) }
+                else if vcpus <= 16 { ServerConfig::new("CORE-16-M", 16, 64, 1000) }
+                else { ServerConfig::new("CORE-32-L", 32, 128, 2000) }
             }
-            Self::Vultr => {
-                if vcpus <= 2 { "vc2-2c-4gb".into() }
-                else if vcpus <= 4 { "vc2-4c-8gb".into() }
-                else { "vc2-8c-32gb".into() }
+            Self::Voxility => {
+                if vcpus <= 8 { ServerConfig::new("Dedicated-S", 8, 64, 1000) }
+                else if vcpus <= 16 { ServerConfig::new("Dedicated-M", 16, 128, 2000) }
+                else { ServerConfig::new("Dedicated-L", 32, 256, 4000) }
             }
-            Self::DigitalOcean => {
-                if vcpus <= 2 { "s-2vcpu-4gb".into() }
-                else if vcpus <= 4 { "s-4vcpu-8gb".into() }
-                else { "s-8vcpu-16gb".into() }
+            Self::EquinixMetal => {
+                if vcpus <= 8 { ServerConfig::new("m3.small.x86", 8, 64, 480) }
+                else if vcpus <= 16 { ServerConfig::new("m3.large.x86", 16, 256, 960) }
+                else { ServerConfig::new("n3.xlarge.x86", 32, 512, 3840) }
             }
-            _ => format!("{}vcpu-{}gb", vcpus, memory_gb),
+            _ => ServerConfig::new(&format!("{}-vcpu-{}gb", vcpus, memory_gb), vcpus, memory_gb, 500),
+        }
+    }
+
+    /// Get instance type string (for backwards compatibility)
+    pub fn instance_type(&self, vcpus: u32, memory_gb: u32) -> String {
+        self.server_config(vcpus, memory_gb).model.clone()
+    }
+
+    /// Get monthly base cost estimate (USD)
+    pub fn monthly_cost(&self, config: &ServerConfig) -> f64 {
+        match self {
+            Self::Hetzner => {
+                // Hetzner is known for excellent value
+                match config.model.as_str() {
+                    "AX41-NVMe" => 50.0,
+                    "AX101" => 130.0,
+                    "AX161" => 200.0,
+                    _ => 100.0,
+                }
+            }
+            Self::OvhCloud => {
+                match config.model.as_str() {
+                    "Advance-1" => 80.0,
+                    "Advance-2" => 160.0,
+                    "Scale-1" => 280.0,
+                    _ => 120.0,
+                }
+            }
+            Self::Scaleway => {
+                match config.model.as_str() {
+                    "CORE-8-S" => 70.0,
+                    "CORE-16-M" => 140.0,
+                    "CORE-32-L" => 250.0,
+                    _ => 100.0,
+                }
+            }
+            Self::Voxility => {
+                // Premium DDoS-protected hosting
+                (config.vcpus as f64) * 15.0 + (config.memory_gb as f64) * 2.0
+            }
+            Self::EquinixMetal => {
+                // Premium bare metal
+                match config.model.as_str() {
+                    "m3.small.x86" => 500.0,
+                    "m3.large.x86" => 1100.0,
+                    "n3.xlarge.x86" => 2500.0,
+                    _ => 800.0,
+                }
+            }
+            _ => 150.0,
+        }
+    }
+
+    /// Get egress cost per GB (most dedicated providers include generous transfer)
+    pub fn egress_cost_per_gb(&self) -> f64 {
+        match self {
+            Self::Hetzner => 0.0,       // 20TB+ included
+            Self::OvhCloud => 0.0,       // Unlimited included on most plans
+            Self::Scaleway => 0.0,       // 1TB+ included
+            Self::Voxility => 0.002,     // Very cheap egress
+            Self::EquinixMetal => 0.05,  // Premium pricing
+            Self::Leaseweb => 0.0,       // Included
+            _ => 0.01,
         }
     }
 }
 
-/// Provider tier
+/// Server configuration for dedicated servers
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerConfig {
+    pub model: String,
+    pub vcpus: u32,
+    pub memory_gb: u32,
+    pub storage_gb: u32,
+}
+
+impl ServerConfig {
+    pub fn new(model: &str, vcpus: u32, memory_gb: u32, storage_gb: u32) -> Self {
+        Self {
+            model: model.to_string(),
+            vcpus,
+            memory_gb,
+            storage_gb,
+        }
+    }
+}
+
+/// Provider tier (based on features, not on being cloud/dedicated)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderTier {
-    /// Full featured (AWS, GCP, Azure)
+    /// Premium dedicated (Voxility, Equinix Metal)
     Tier1,
-    /// Cost-optimized (Vultr, DO, Linode)
+    /// Cost-effective dedicated (OVH, Hetzner, Scaleway)
     Tier2,
-    /// Bare metal / Performance
+    /// Budget dedicated
     Tier3,
 }
 
 /// Provider credentials
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderCredentials {
-    pub provider: CloudProvider,
+    pub provider: DedicatedProvider,
     pub credentials: CredentialType,
 }
 
@@ -146,7 +241,7 @@ pub struct ProviderCredentials {
 pub enum CredentialType {
     ApiKey { key: String },
     AccessKey { access_key: String, secret_key: String },
-    ServiceAccount { json_key: String },
+    SshKey { private_key: String, public_key: String },
     OAuth { token: String },
 }
 
@@ -156,17 +251,33 @@ mod tests {
 
     #[test]
     fn test_provider_tiers() {
-        assert_eq!(CloudProvider::Aws.tier(), ProviderTier::Tier1);
-        assert_eq!(CloudProvider::Vultr.tier(), ProviderTier::Tier2);
-        assert_eq!(CloudProvider::EquinixMetal.tier(), ProviderTier::Tier3);
+        assert_eq!(DedicatedProvider::Voxility.tier(), ProviderTier::Tier1);
+        assert_eq!(DedicatedProvider::Hetzner.tier(), ProviderTier::Tier2);
+        assert_eq!(DedicatedProvider::Leaseweb.tier(), ProviderTier::Tier3);
     }
 
     #[test]
-    fn test_instance_types() {
-        let aws_small = CloudProvider::Aws.instance_type(2, 4);
-        assert_eq!(aws_small, "t3.small");
+    fn test_server_configs() {
+        let hetzner_small = DedicatedProvider::Hetzner.server_config(4, 32);
+        assert_eq!(hetzner_small.model, "AX41-NVMe");
         
-        let aws_large = CloudProvider::Aws.instance_type(16, 32);
-        assert_eq!(aws_large, "c5.4xlarge");
+        let ovh_large = DedicatedProvider::OvhCloud.server_config(32, 128);
+        assert_eq!(ovh_large.model, "Scale-1");
+    }
+
+    #[test]
+    fn test_egress_costs() {
+        // Dedicated servers typically have free or very cheap egress
+        assert_eq!(DedicatedProvider::Hetzner.egress_cost_per_gb(), 0.0);
+        assert_eq!(DedicatedProvider::OvhCloud.egress_cost_per_gb(), 0.0);
+        assert!(DedicatedProvider::Voxility.egress_cost_per_gb() < 0.01);
+    }
+
+    #[test]
+    fn test_bgp_support() {
+        // All Tier 1/2 providers support BGP on dedicated
+        assert!(DedicatedProvider::Voxility.supports_bgp());
+        assert!(DedicatedProvider::OvhCloud.supports_bgp());
+        assert!(DedicatedProvider::Hetzner.supports_bgp());
     }
 }

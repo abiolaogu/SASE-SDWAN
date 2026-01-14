@@ -203,7 +203,7 @@ pub enum OrchestratorError {
 mod tests {
     use super::*;
     use crate::pop::{Region, Continent, PopTier, CapacitySpec, ServiceConfig, ResourceLimits, PortMapping};
-    use crate::provider::CloudProvider;
+    use crate::provider::DedicatedProvider;
 
     #[tokio::test]
     async fn test_orchestrator_deploy() {
@@ -213,8 +213,9 @@ mod tests {
         };
         let orch = Orchestrator::new(config);
 
-        let region = Region::new("us-east-1", "US East", Continent::NorthAmerica, 39.0, -77.0);
-        let pop = PopDefinition::new("test-pop", region, CloudProvider::Aws, PopTier::Edge)
+        // Using Hetzner datacenter - dedicated server only
+        let region = Region::new("fsn1", "Falkenstein", Continent::Europe, 50.47, 12.37);
+        let pop = PopDefinition::new("test-pop", region, DedicatedProvider::Hetzner, PopTier::Edge)
             .with_capacity(CapacitySpec::small())
             .with_service(ServiceConfig {
                 name: "tunnel".into(),
