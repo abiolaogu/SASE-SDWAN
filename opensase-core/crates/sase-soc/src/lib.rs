@@ -51,6 +51,10 @@ pub mod normalize;
 pub mod enrichment;
 pub mod correlation;
 pub mod pipeline;
+pub mod forwarder;
+pub mod edr;
+pub mod actions;
+pub mod metrics;
 
 // =============================================================================
 // Core Types
