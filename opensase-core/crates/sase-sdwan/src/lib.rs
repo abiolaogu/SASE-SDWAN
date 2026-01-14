@@ -27,12 +27,16 @@ pub mod tunnel;
 pub mod policy;
 pub mod path;
 pub mod flexiwan;
+pub mod vpp_bridge;
+pub mod suricata;
 
 pub use site::{Site, SiteManager, SiteConfig, SiteStatus};
 pub use tunnel::{Tunnel, TunnelManager, TunnelConfig, TunnelStatus};
 pub use policy::{SdwanPolicy, PolicyManager, PathPreference};
 pub use path::{PathSelector, PathMetrics, SlaThresholds};
 pub use flexiwan::FlexiWanClient;
+pub use vpp_bridge::VppBridge;
+pub use suricata::SuricataIntegration;
 
 use thiserror::Error;
 

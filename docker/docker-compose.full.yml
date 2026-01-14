@@ -1,0 +1,301 @@
+# OpenSASE Complete Deployment Stack
+# Full Control Plane + Data Plane
+
+version: '3.8'
+
+services:
+  # ============================================
+  # CONTROL PLANE
+  # ============================================
+
+  # FlexiWAN Management Controller
+  flexiwan-controller:
+    image: flexiwan/flexiwan-controller:latest
+    container_name: flexiwan-controller
+    ports:
+      - "3000:3000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/flexiwan
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=production
+      - JWT_SECRET=${FLEXIWAN_JWT_SECRET:-opensase-dev-secret}
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - control-plane
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # OpenSASE Portal (React UI)
+  opensase-portal:
+    build:
+      context: ../opensase-portal
+      dockerfile: Dockerfile
+    container_name: opensase-portal
+    ports:
+      - "8080:80"
+    environment:
+      - API_URL=http://osso-api:8081
+    depends_on:
+      - osso-api
+    networks:
+      - control-plane
+    restart: unless-stopped
+
+  # OSSO API (Rust Backend)
+  osso-api:
+    build:
+      context: ../opensase-core
+      dockerfile: Dockerfile
+      target: osso
+    container_name: osso-api
+    ports:
+      - "8081:8081"
+      - "50051:50051" # gRPC
+    environment:
+      - FLEXIWAN_URL=http://flexiwan-controller:3000
+      - FLEXIWAN_EMAIL=${FLEXIWAN_ADMIN_EMAIL:-admin@opensase.lab}
+      - FLEXIWAN_PASSWORD=${FLEXIWAN_ADMIN_PASSWORD:-}
+      - VPP_API_SOCKET=/run/vpp/api.sock
+      - SURICATA_SOCKET=/run/suricata/suricata-command.socket
+      - RUST_LOG=info
+    volumes:
+      - vpp-socket:/run/vpp
+      - suricata-socket:/run/suricata
+    depends_on:
+      - flexiwan-controller
+    networks:
+      - control-plane
+      - data-plane
+    restart: unless-stopped
+
+  # MongoDB
+  mongo:
+    image: mongo:6
+    container_name: opensase-mongo
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - control-plane
+    restart: unless-stopped
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: opensase-redis
+    networks:
+      - control-plane
+    restart: unless-stopped
+
+  # ============================================
+  # DATA PLANE - PoP Gateway
+  # ============================================
+
+  # VPP Data Plane (PoP)
+  vpp-pop:
+    image: ligato/vpp-base:23.02
+    container_name: vpp-pop
+    privileged: true
+    volumes:
+      - ./vpp/startup.conf:/etc/vpp/startup.conf:ro
+      - vpp-socket:/run/vpp
+      - /dev/hugepages:/dev/hugepages
+    networks:
+      - data-plane
+      - wan-net
+    cap_add:
+      - NET_ADMIN
+      - SYS_NICE
+      - IPC_LOCK
+    restart: unless-stopped
+
+  # Suricata IPS
+  suricata:
+    image: jasonish/suricata:latest
+    container_name: suricata
+    network_mode: host
+    privileged: true
+    volumes:
+      - ./suricata/suricata.yaml:/etc/suricata/suricata.yaml:ro
+      - ./suricata/rules:/var/lib/suricata/rules
+      - suricata-logs:/var/log/suricata
+      - suricata-socket:/run/suricata
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+    restart: unless-stopped
+
+  # FlexiEdge Agent (PoP)
+  flexiedge-pop:
+    image: flexiwan/flexiwan-router:latest
+    container_name: flexiedge-pop
+    privileged: true
+    environment:
+      - FLEXIWAN_TOKEN=${POP_DEVICE_TOKEN}
+      - FLEXIWAN_URL=http://flexiwan-controller:3000
+    volumes:
+      - ./flexiedge/pop.conf:/etc/flexiwan/device.conf:ro
+    networks:
+      - control-plane
+      - data-plane
+      - wan-net
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+  # Envoy L7 Gateway
+  envoy-gateway:
+    image: envoyproxy/envoy:v1.28-latest
+    container_name: envoy-gateway
+    ports:
+      - "443:8443"
+      - "80:8080"
+    volumes:
+      - ../envoy/config/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ../envoy/certs:/etc/envoy/certs:ro
+    networks:
+      - data-plane
+    restart: unless-stopped
+
+  # ============================================
+  # DATA PLANE - Branch Sites
+  # ============================================
+
+  # Branch A
+  flexiedge-branch-a:
+    image: flexiwan/flexiwan-router:latest
+    container_name: branch-a
+    privileged: true
+    environment:
+      - FLEXIWAN_TOKEN=${BRANCH_A_TOKEN}
+      - FLEXIWAN_URL=http://flexiwan-controller:3000
+    volumes:
+      - ./flexiedge/branch-a.conf:/etc/flexiwan/device.conf:ro
+    networks:
+      - control-plane
+      - wan-net
+      - branch-a-lan
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+  # Branch B
+  flexiedge-branch-b:
+    image: flexiwan/flexiwan-router:latest
+    container_name: branch-b
+    privileged: true
+    environment:
+      - FLEXIWAN_TOKEN=${BRANCH_B_TOKEN}
+      - FLEXIWAN_URL=http://flexiwan-controller:3000
+    volumes:
+      - ./flexiedge/branch-b.conf:/etc/flexiwan/device.conf:ro
+    networks:
+      - control-plane
+      - wan-net
+      - branch-b-lan
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+  # ============================================
+  # MONITORING
+  # ============================================
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - control-plane
+    restart: unless-stopped
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - control-plane
+    restart: unless-stopped
+
+  # Wazuh SIEM
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.7.0
+    container_name: wazuh-manager
+    ports:
+      - "1514:1514/udp"
+      - "1515:1515"
+      - "55000:55000"
+    volumes:
+      - wazuh-data:/var/ossec/data
+    networks:
+      - control-plane
+    restart: unless-stopped
+
+# ============================================
+# NETWORKS
+# ============================================
+
+networks:
+  control-plane:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+  data-plane:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
+
+  wan-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.200.0.0/24
+
+  branch-a-lan:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.201.0.0/24
+
+  branch-b-lan:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.202.0.0/24
+
+# ============================================
+# VOLUMES
+# ============================================
+
+volumes:
+  mongo-data:
+  prometheus-data:
+  grafana-data:
+  wazuh-data:
+  suricata-logs:
+  vpp-socket:
+  suricata-socket:
