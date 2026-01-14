@@ -47,6 +47,12 @@ pub mod platform;
 pub mod config;
 pub mod auth;
 pub mod dns;
+pub mod tray;
+pub mod certs;
+pub mod intercept;
+pub mod diagnostics;
+pub mod power;
+pub mod keychain;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;
