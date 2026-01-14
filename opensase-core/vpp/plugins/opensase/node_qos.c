@@ -15,9 +15,8 @@
 #include "opensase.h"
 
 typedef enum {
-  OPENSASE_QOS_NEXT_IP4_LOOKUP, /* Forward to IP lookup */
-  OPENSASE_QOS_NEXT_WIREGUARD,  /* Encrypt via WireGuard */
-  OPENSASE_QOS_NEXT_DROP,       /* Rate limited - drop */
+  OPENSASE_QOS_NEXT_NAT,  /* Continue to NAT/PAT */
+  OPENSASE_QOS_NEXT_DROP, /* Rate limited - drop */
   OPENSASE_QOS_N_NEXT,
 } opensase_qos_next_t;
 
@@ -173,13 +172,11 @@ VLIB_NODE_FN(opensase_qos_node)(vlib_main_t *vm, vlib_node_runtime_t *node,
       /* Update worker stats */
       w->bytes_processed += pkt_len0 + pkt_len1 + pkt_len2 + pkt_len3;
 
-      /* Determine next node */
-      /* For now, all go to IP lookup (WireGuard would be configured
-       * per-session) */
-      next[0] = OPENSASE_QOS_NEXT_IP4_LOOKUP;
-      next[1] = OPENSASE_QOS_NEXT_IP4_LOOKUP;
-      next[2] = OPENSASE_QOS_NEXT_IP4_LOOKUP;
-      next[3] = OPENSASE_QOS_NEXT_IP4_LOOKUP;
+      /* Continue to NAT/PAT node */
+      next[0] = OPENSASE_QOS_NEXT_NAT;
+      next[1] = OPENSASE_QOS_NEXT_NAT;
+      next[2] = OPENSASE_QOS_NEXT_NAT;
+      next[3] = OPENSASE_QOS_NEXT_NAT;
 
       /* Check rate limits for scavenger class */
       if (op0->qos_class == OPENSASE_QOS_SCAVENGER) {
@@ -221,7 +218,7 @@ VLIB_NODE_FN(opensase_qos_node)(vlib_main_t *vm, vlib_node_runtime_t *node,
 
     w->bytes_processed += vlib_buffer_length_in_chain(vm, b[0]);
 
-    next[0] = OPENSASE_QOS_NEXT_IP4_LOOKUP;
+    next[0] = OPENSASE_QOS_NEXT_NAT;
 
     b += 1;
     next += 1;
@@ -245,8 +242,7 @@ VLIB_REGISTER_NODE(opensase_qos_node) = {
     .n_next_nodes = OPENSASE_QOS_N_NEXT,
     .next_nodes =
         {
-            [OPENSASE_QOS_NEXT_IP4_LOOKUP] = "ip4-lookup",
-            [OPENSASE_QOS_NEXT_WIREGUARD] = "wireguard-if-output",
+            [OPENSASE_QOS_NEXT_NAT] = "opensase-nat",
             [OPENSASE_QOS_NEXT_DROP] = "error-drop",
         },
 };

@@ -1,17 +1,22 @@
 # OpenSASE VPP Plugin - CMakeLists.txt
 # Builds the main SASE data plane plugin
+# Target: 100 Gbps with <5μs latency
 
 cmake_minimum_required(VERSION 3.16)
 
-# Sources for the opensase plugin
+# Sources for the opensase plugin - ordered by packet flow
 set(OPENSASE_SOURCES
-    opensase.c
-    node_security.c
-    node_policy.c
-    node_dlp.c
-    node_classify.c
-    node_qos.c
+    opensase.c          # Plugin registration
+    node_tenant.c       # Tenant lookup (input)
+    node_security.c     # Session tracking
+    node_policy.c       # Policy enforcement
+    node_dlp.c          # DLP inspection
+    node_classify.c     # App classification
+    node_qos.c          # QoS marking
+    node_nat.c          # NAT/PAT
+    node_encap.c        # Encapsulation (output)
 )
+
 
 # Create the plugin shared library
 add_library(opensase_plugin SHARED ${OPENSASE_SOURCES})
