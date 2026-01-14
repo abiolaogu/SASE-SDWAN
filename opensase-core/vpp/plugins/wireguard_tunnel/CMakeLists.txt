@@ -5,6 +5,7 @@ cmake_minimum_required(VERSION 3.16)
 # Sources
 set(WG_SOURCES
     wireguard.c
+    wireguard_cli.c
 )
 
 # Create plugin
