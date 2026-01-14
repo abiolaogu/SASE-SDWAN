@@ -1,11 +1,11 @@
-# OpenSASE Bare Metal Orchestrator - Equinix Metal Module
-# 100+ Gbps Dedicated Servers with BGP Anycast
+# OBMO Equinix Metal Module (TIER 1 - GLOBAL COVERAGE)
+# 100 Gbps capable with BGP Anycast
 
 terraform {
   required_providers {
     equinix = {
       source  = "equinix/equinix"
-      version = "~> 1.20"
+      version = "~> 1.14"
     }
   }
 }
@@ -14,72 +14,44 @@ terraform {
 # Variables
 # ===========================================
 
+variable "pop_config" {
+  description = "PoP configuration object"
+  type = object({
+    name           = string
+    metro          = string  # ny, ld, am, sg, ty, etc.
+    environment    = string
+    controller_url = string
+    activation_key = string
+  })
+}
+
 variable "project_id" {
   description = "Equinix Metal project ID"
   type        = string
 }
 
-variable "pop_name" {
-  description = "PoP identifier (e.g., nyc1, ams1)"
+variable "high_performance" {
+  description = "Use 100G capable servers"
+  type        = bool
+  default     = true
+}
+
+variable "enable_ha" {
+  description = "Enable HA with secondary server"
+  type        = bool
+  default     = true
+}
+
+variable "reservation_id" {
+  description = "Hardware reservation ID for consistent performance"
   type        = string
+  default     = ""
 }
 
-variable "metro" {
-  description = "Equinix metro code"
-  type        = string
-}
-
-variable "plan" {
-  description = "Server plan - n3.xlarge.x86 for 100G"
-  type        = string
-  default     = "n3.xlarge.x86"
-}
-
-variable "instance_count" {
-  description = "Number of bare metal servers"
-  type        = number
-  default     = 2
-}
-
-variable "operating_system" {
-  type    = string
-  default = "ubuntu_22_04"
-}
-
-variable "ssh_keys" {
-  type    = list(string)
-  default = []
-}
-
-variable "enable_bgp" {
-  type    = bool
-  default = true
-}
-
-variable "bgp_asn" {
-  type    = number
-  default = 65100
-}
-
-variable "anycast_ips" {
-  description = "Number of anycast IPs"
-  type        = number
-  default     = 4
-}
-
-variable "controller_url" {
-  type    = string
-  default = "https://manage.opensase.io"
-}
-
-variable "activation_key" {
-  type      = string
-  sensitive = true
-}
-
-variable "environment" {
-  type    = string
-  default = "production"
+variable "ssh_public_keys" {
+  description = "SSH public keys for access"
+  type        = list(string)
+  default     = []
 }
 
 # ===========================================
@@ -87,22 +59,23 @@ variable "environment" {
 # ===========================================
 
 locals {
+  # Server plans optimized for 100 Gbps networking
+  # m3.large.x86: 32 cores, 256GB RAM, 2x25GbE (Intel XXV710)
+  # n3.xlarge.x86: 32 cores, 512GB RAM, 2x100GbE (Mellanox ConnectX-6)
+  server_plan = var.high_performance ? "n3.xlarge.x86" : "m3.large.x86"
+  
+  nic_info = {
+    "n3.xlarge.x86" = { type = "mellanox_cx6", speed = 200 }
+    "m3.large.x86"  = { type = "intel_xxv710", speed = 50 }
+  }
+  
   tags = [
     "opensase",
     "obmo",
-    "pop-${var.pop_name}",
-    "env-${var.environment}",
+    "pop:${var.pop_config.name}",
+    "env:${var.pop_config.environment}",
     "100gbps"
   ]
-  
-  # 100G capable plans
-  high_perf_plans = {
-    "n3.xlarge.x86" = { cores = 32, ram = 512, nic = "mellanox_cx6", speed = 200 }
-    "m3.large.x86"  = { cores = 32, ram = 256, nic = "intel_xxv710", speed = 50 }
-    "s3.xlarge.x86" = { cores = 24, ram = 192, nic = "intel_xxv710", speed = 50 }
-  }
-  
-  server_spec = local.high_perf_plans[var.plan]
 }
 
 # ===========================================
@@ -110,115 +83,43 @@ locals {
 # ===========================================
 
 resource "equinix_metal_project_ssh_key" "obmo" {
-  count = length(var.ssh_keys) == 0 ? 1 : 0
+  count = length(var.ssh_public_keys) > 0 ? length(var.ssh_public_keys) : 0
   
-  name       = "obmo-${var.pop_name}"
-  public_key = file("~/.ssh/opensase.pub")
+  name       = "obmo-${var.pop_config.name}-${count.index}"
+  public_key = var.ssh_public_keys[count.index]
   project_id = var.project_id
 }
 
 # ===========================================
-# VLANs for Network Segmentation
+# Primary PoP Server
 # ===========================================
 
-resource "equinix_metal_vlan" "data_plane" {
-  metro       = var.metro
-  project_id  = var.project_id
-  description = "OBMO ${var.pop_name} data plane (100G traffic)"
-}
-
-resource "equinix_metal_vlan" "control_plane" {
-  metro       = var.metro
-  project_id  = var.project_id
-  description = "OBMO ${var.pop_name} control plane"
-}
-
-resource "equinix_metal_vlan" "management" {
-  metro       = var.metro
-  project_id  = var.project_id
-  description = "OBMO ${var.pop_name} management"
-}
-
-# ===========================================
-# Reserved IP Blocks for Anycast
-# ===========================================
-
-resource "equinix_metal_reserved_ip_block" "anycast_v4" {
-  count = var.enable_bgp ? 1 : 0
-  
-  project_id  = var.project_id
-  metro       = var.metro
-  quantity    = var.anycast_ips
-  type        = "public_ipv4"
-  description = "OBMO ${var.pop_name} anycast IPv4"
-  tags        = local.tags
-}
-
-resource "equinix_metal_reserved_ip_block" "anycast_v6" {
-  count = var.enable_bgp ? 1 : 0
-  
-  project_id  = var.project_id
-  metro       = var.metro
-  quantity    = 8
-  type        = "public_ipv6"
-  description = "OBMO ${var.pop_name} anycast IPv6"
-  tags        = local.tags
-}
-
-# ===========================================
-# Bare Metal Servers (100 Gbps)
-# ===========================================
-
-resource "equinix_metal_device" "server" {
-  count = var.instance_count
-  
-  hostname         = "obmo-${var.pop_name}-${format("%02d", count.index + 1)}"
-  plan             = var.plan
-  metro            = var.metro
-  operating_system = var.operating_system
+resource "equinix_metal_device" "pop_primary" {
+  hostname         = "opensase-${var.pop_config.name}-01"
+  plan             = local.server_plan
+  metro            = var.pop_config.metro
+  operating_system = "ubuntu_22_04"
   billing_cycle    = "hourly"
   project_id       = var.project_id
   
-  project_ssh_key_ids = length(var.ssh_keys) > 0 ? var.ssh_keys : [
-    equinix_metal_project_ssh_key.obmo[0].id
-  ]
-  
-  # Network configuration for 100G
-  ip_address {
-    type = "public_ipv4"
-  }
-  ip_address {
-    type = "private_ipv4"
-  }
-  ip_address {
-    type = "public_ipv6"
-  }
-  
-  # User data for 100G bootstrap
-  user_data = templatefile("${path.module}/templates/100g-bootstrap.sh.tpl", {
-    pop_name       = var.pop_name
-    server_index   = count.index + 1
-    server_count   = var.instance_count
-    controller_url = var.controller_url
-    activation_key = var.activation_key
-    enable_bgp     = var.enable_bgp
-    bgp_asn        = var.bgp_asn
-    is_primary     = count.index == 0
-    nic_type       = local.server_spec.nic
-    nic_speed      = local.server_spec.speed
-    worker_cores   = min(16, local.server_spec.cores - 2)
+  # Cloud-init for automated setup
+  user_data = templatefile("${path.module}/templates/cloud-init.yaml.tpl", {
+    pop_name       = var.pop_config.name
+    controller_url = var.pop_config.controller_url
+    activation_key = var.pop_config.activation_key
+    role           = "primary"
+    nic_type       = local.nic_info[local.server_plan].type
+    nic_speed      = local.nic_info[local.server_plan].speed
   })
   
-  custom_data = jsonencode({
-    obmo_version = "1.0.0"
-    nic_config = {
-      type  = local.server_spec.nic
-      speed = local.server_spec.speed
-    }
-    anycast_ips = var.enable_bgp ? equinix_metal_reserved_ip_block.anycast_v4[0].address : null
-  })
+  # Hardware reservation for consistent performance
+  hardware_reservation_id = var.reservation_id != "" ? var.reservation_id : null
   
-  tags = local.tags
+  project_ssh_key_ids = length(var.ssh_public_keys) > 0 ? [
+    for key in equinix_metal_project_ssh_key.obmo : key.id
+  ] : null
+  
+  tags = concat(local.tags, ["role:primary"])
   
   lifecycle {
     ignore_changes = [user_data]
@@ -226,64 +127,133 @@ resource "equinix_metal_device" "server" {
 }
 
 # ===========================================
-# VLAN Attachments to Servers
+# Secondary Server for HA
 # ===========================================
 
-resource "equinix_metal_port_vlan_attachment" "data_plane" {
-  count = var.instance_count
+resource "equinix_metal_device" "pop_secondary" {
+  count = var.enable_ha ? 1 : 0
   
-  device_id = equinix_metal_device.server[count.index].id
-  port_name = "bond0"
-  vlan_vnid = equinix_metal_vlan.data_plane.vxlan
+  hostname         = "opensase-${var.pop_config.name}-02"
+  plan             = local.server_plan
+  metro            = var.pop_config.metro
+  operating_system = "ubuntu_22_04"
+  billing_cycle    = "hourly"
+  project_id       = var.project_id
+  
+  user_data = templatefile("${path.module}/templates/cloud-init.yaml.tpl", {
+    pop_name       = var.pop_config.name
+    controller_url = var.pop_config.controller_url
+    activation_key = var.pop_config.activation_key
+    role           = "secondary"
+    nic_type       = local.nic_info[local.server_plan].type
+    nic_speed      = local.nic_info[local.server_plan].speed
+  })
+  
+  project_ssh_key_ids = length(var.ssh_public_keys) > 0 ? [
+    for key in equinix_metal_project_ssh_key.obmo : key.id
+  ] : null
+  
+  tags = concat(local.tags, ["role:secondary"])
+  
+  lifecycle {
+    ignore_changes = [user_data]
+  }
 }
 
-resource "equinix_metal_port_vlan_attachment" "control_plane" {
-  count = var.instance_count
-  
-  device_id = equinix_metal_device.server[count.index].id
-  port_name = "bond0"
-  vlan_vnid = equinix_metal_vlan.control_plane.vxlan
+# ===========================================
+# Reserved IPs for Anycast
+# ===========================================
+
+resource "equinix_metal_reserved_ip_block" "anycast_v4" {
+  project_id  = var.project_id
+  metro       = var.pop_config.metro
+  type        = "public_ipv4"
+  quantity    = 8
+  description = "OpenSASE Anycast IPs - ${var.pop_config.name}"
+  tags        = local.tags
+}
+
+resource "equinix_metal_reserved_ip_block" "anycast_v6" {
+  project_id  = var.project_id
+  metro       = var.pop_config.metro
+  type        = "public_ipv6"
+  quantity    = 1  # /56 block
+  description = "OpenSASE Anycast IPv6 - ${var.pop_config.name}"
+  tags        = local.tags
+}
+
+# ===========================================
+# Attach IPs to Primary Server
+# ===========================================
+
+resource "equinix_metal_ip_attachment" "primary_anycast" {
+  device_id     = equinix_metal_device.pop_primary.id
+  cidr_notation = "${equinix_metal_reserved_ip_block.anycast_v4.address}/${equinix_metal_reserved_ip_block.anycast_v4.cidr}"
 }
 
 # ===========================================
 # BGP Sessions for Anycast
 # ===========================================
 
-resource "equinix_metal_bgp_session" "ipv4" {
-  count = var.enable_bgp ? var.instance_count : 0
-  
-  device_id      = equinix_metal_device.server[count.index].id
+resource "equinix_metal_bgp_session" "primary_bgp_v4" {
+  device_id      = equinix_metal_device.pop_primary.id
   address_family = "ipv4"
 }
 
-resource "equinix_metal_bgp_session" "ipv6" {
-  count = var.enable_bgp ? var.instance_count : 0
-  
-  device_id      = equinix_metal_device.server[count.index].id
+resource "equinix_metal_bgp_session" "primary_bgp_v6" {
+  device_id      = equinix_metal_device.pop_primary.id
   address_family = "ipv6"
 }
 
-# ===========================================
-# Anycast IP Assignment
-# ===========================================
-
-resource "equinix_metal_ip_attachment" "anycast" {
-  count = var.enable_bgp ? 1 : 0
+resource "equinix_metal_bgp_session" "secondary_bgp_v4" {
+  count = var.enable_ha ? 1 : 0
   
-  device_id     = equinix_metal_device.server[0].id
-  cidr_notation = "${equinix_metal_reserved_ip_block.anycast_v4[0].address}/${equinix_metal_reserved_ip_block.anycast_v4[0].cidr}"
+  device_id      = equinix_metal_device.pop_secondary[0].id
+  address_family = "ipv4"
 }
 
 # ===========================================
-# Metal Gateway
+# Private VLAN for Inter-Server Communication
 # ===========================================
 
-resource "equinix_metal_gateway" "pop" {
-  count = var.enable_bgp ? 1 : 0
+resource "equinix_metal_vlan" "pop_private" {
+  metro       = var.pop_config.metro
+  project_id  = var.project_id
+  description = "OpenSASE Private VLAN - ${var.pop_config.name}"
+}
+
+resource "equinix_metal_vlan" "pop_management" {
+  metro       = var.pop_config.metro
+  project_id  = var.project_id
+  description = "OpenSASE Management VLAN - ${var.pop_config.name}"
+}
+
+# ===========================================
+# VLAN Attachments
+# ===========================================
+
+resource "equinix_metal_port_vlan_attachment" "primary_private" {
+  device_id = equinix_metal_device.pop_primary.id
+  port_name = "bond0"
+  vlan_vnid = equinix_metal_vlan.pop_private.vxlan
+}
+
+resource "equinix_metal_port_vlan_attachment" "secondary_private" {
+  count = var.enable_ha ? 1 : 0
   
+  device_id = equinix_metal_device.pop_secondary[0].id
+  port_name = "bond0"
+  vlan_vnid = equinix_metal_vlan.pop_private.vxlan
+}
+
+# ===========================================
+# Metal Gateway for Hybrid Connectivity
+# ===========================================
+
+resource "equinix_metal_gateway" "pop_gateway" {
   project_id        = var.project_id
-  vlan_id           = equinix_metal_vlan.data_plane.id
-  ip_reservation_id = equinix_metal_reserved_ip_block.anycast_v4[0].id
+  vlan_id           = equinix_metal_vlan.pop_private.id
+  ip_reservation_id = equinix_metal_reserved_ip_block.anycast_v4.id
 }
 
 # ===========================================
@@ -291,52 +261,61 @@ resource "equinix_metal_gateway" "pop" {
 # ===========================================
 
 output "pop_info" {
+  description = "PoP deployment information"
   value = {
-    name       = var.pop_name
-    metro      = var.metro
-    plan       = var.plan
-    nic_type   = local.server_spec.nic
-    speed_gbps = local.server_spec.speed
-    instances  = var.instance_count
+    pop_name     = var.pop_config.name
+    metro        = var.pop_config.metro
+    server_plan  = local.server_plan
+    nic_type     = local.nic_info[local.server_plan].type
+    nic_speed    = local.nic_info[local.server_plan].speed
+    primary_ip   = equinix_metal_device.pop_primary.access_public_ipv4
+    secondary_ip = var.enable_ha ? equinix_metal_device.pop_secondary[0].access_public_ipv4 : null
+    anycast_ips  = equinix_metal_reserved_ip_block.anycast_v4.address
+    anycast_cidr = equinix_metal_reserved_ip_block.anycast_v4.cidr
+    vlan_id      = equinix_metal_vlan.pop_private.vxlan
   }
 }
 
-output "server_ids" {
-  value = [for s in equinix_metal_device.server : s.id]
-}
-
 output "public_ips" {
-  value = [for s in equinix_metal_device.server : s.access_public_ipv4]
+  value = concat(
+    [equinix_metal_device.pop_primary.access_public_ipv4],
+    var.enable_ha ? [equinix_metal_device.pop_secondary[0].access_public_ipv4] : []
+  )
 }
 
 output "private_ips" {
-  value = [for s in equinix_metal_device.server : s.access_private_ipv4]
+  value = concat(
+    [equinix_metal_device.pop_primary.access_private_ipv4],
+    var.enable_ha ? [equinix_metal_device.pop_secondary[0].access_private_ipv4] : []
+  )
 }
 
 output "anycast_block" {
-  value = var.enable_bgp ? {
-    ipv4_address = equinix_metal_reserved_ip_block.anycast_v4[0].address
-    ipv4_cidr    = equinix_metal_reserved_ip_block.anycast_v4[0].cidr
-    ipv4_gateway = equinix_metal_reserved_ip_block.anycast_v4[0].gateway
-    ipv6_address = equinix_metal_reserved_ip_block.anycast_v6[0].address
-  } : null
+  value = {
+    ipv4_address = equinix_metal_reserved_ip_block.anycast_v4.address
+    ipv4_cidr    = equinix_metal_reserved_ip_block.anycast_v4.cidr
+    ipv4_gateway = equinix_metal_reserved_ip_block.anycast_v4.gateway
+    ipv6_address = equinix_metal_reserved_ip_block.anycast_v6.address
+  }
 }
 
 output "bgp_info" {
-  value = var.enable_bgp ? {
-    asn      = var.bgp_asn
-    sessions = [for s in equinix_metal_bgp_session.ipv4 : s.id]
-  } : null
+  value = {
+    primary_session   = equinix_metal_bgp_session.primary_bgp_v4.id
+    secondary_session = var.enable_ha ? equinix_metal_bgp_session.secondary_bgp_v4[0].id : null
+  }
 }
 
 output "vlans" {
   value = {
-    data_plane    = equinix_metal_vlan.data_plane.vxlan
-    control_plane = equinix_metal_vlan.control_plane.vxlan
-    management    = equinix_metal_vlan.management.vxlan
+    private    = equinix_metal_vlan.pop_private.vxlan
+    management = equinix_metal_vlan.pop_management.vxlan
   }
 }
 
 output "ssh_commands" {
-  value = [for s in equinix_metal_device.server : "ssh root@${s.access_public_ipv4}"]
+  value = concat(
+    ["ssh root@${equinix_metal_device.pop_primary.access_public_ipv4}"],
+    var.enable_ha ? ["ssh root@${equinix_metal_device.pop_secondary[0].access_public_ipv4}"] : []
+  )
 }

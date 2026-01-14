@@ -1,5 +1,5 @@
-# OpenSASE Bare Metal Orchestrator - Hetzner Module
-# AX-Series Dedicated Servers via Robot API
+# OBMO Hetzner Module (TIER 2 - EXTREMELY COST-EFFECTIVE)
+# Robot API for dedicated servers + hcloud for networking
 
 terraform {
   required_providers {
@@ -14,25 +14,22 @@ terraform {
 # Variables
 # ===========================================
 
-variable "pop_name" {
-  type = string
+variable "pop_config" {
+  description = "PoP configuration object"
+  type = object({
+    name           = string
+    location       = string  # fsn1, nbg1, hel1
+    environment    = string
+    controller_url = string
+    activation_key = string
+    network_id     = number
+  })
 }
 
-variable "datacenter" {
-  description = "Hetzner datacenter (fsn1, nbg1, hel1, ash)"
-  type        = string
-  default     = "fsn1"
-}
-
-variable "server_type" {
-  description = "Dedicated server type (AX101, AX161, etc)"
-  type        = string
-  default     = "AX161"
-}
-
-variable "instance_count" {
-  type    = number
-  default = 2
+variable "high_performance" {
+  description = "Use high-performance servers"
+  type        = bool
+  default     = true
 }
 
 variable "ssh_public_key" {
@@ -51,19 +48,16 @@ variable "robot_password" {
   sensitive   = true
 }
 
-variable "controller_url" {
-  type    = string
-  default = "https://manage.opensase.io"
+variable "management_ips" {
+  description = "IPs allowed for SSH access"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
 }
 
-variable "activation_key" {
-  type      = string
-  sensitive = true
-}
-
-variable "environment" {
-  type    = string
-  default = "production"
+variable "bgp_peer_ips" {
+  description = "BGP peer IPs"
+  type        = list(string)
+  default     = []
 }
 
 # ===========================================
@@ -71,51 +65,14 @@ variable "environment" {
 # ===========================================
 
 locals {
-  server_specs = {
-    "AX41" = {
-      cores    = 6
-      ram_gb   = 64
-      nic_type = "intel_x710"
-      speed    = 10
-      price    = 49
-    }
-    "AX51" = {
-      cores    = 8
-      ram_gb   = 64
-      nic_type = "intel_x710"
-      speed    = 10
-      price    = 64
-    }
-    "AX101" = {
-      cores    = 24
-      ram_gb   = 128
-      nic_type = "intel_x710"
-      speed    = 20
-      price    = 99
-    }
-    "AX161" = {
-      cores    = 64
-      ram_gb   = 128
-      nic_type = "intel_x710"
-      speed    = 20
-      price    = 176
-    }
-    "AX102" = {
-      cores    = 32
-      ram_gb   = 128
-      nic_type = "intel_x710"
-      speed    = 20
-      price    = 114
-    }
-  }
+  # Hetzner dedicated server recommendations for 100 Gbps:
+  # AX161: AMD EPYC 9454P, 128GB DDR5, 2x10Gbps
+  # SX134: AMD EPYC 9354P, 256GB DDR5, 2x25Gbps
+  server_product = var.high_performance ? "SX134" : "AX161"
   
-  spec = local.server_specs[var.server_type]
-  
-  dc_mapping = {
-    "fsn1" = "FSN1-DC14"
-    "nbg1" = "NBG1-DC3"
-    "hel1" = "HEL1-DC2"
-    "ash"  = "ASH-DC1"
+  nic_info = {
+    "SX134" = { type = "intel_xxv710", speed = 50 }
+    "AX161" = { type = "intel_x710", speed = 20 }
   }
 }
 
@@ -123,125 +80,143 @@ locals {
 # SSH Key
 # ===========================================
 
-resource "hcloud_ssh_key" "obmo" {
-  name       = "obmo-${var.pop_name}"
+resource "hcloud_ssh_key" "opensase" {
+  name       = "opensase-${var.pop_config.name}"
   public_key = var.ssh_public_key
 }
 
 # ===========================================
-# Hetzner Robot API for Dedicated Servers
+# Private Network
 # ===========================================
 
-# Hetzner dedicated servers require Robot API
-# Using null_resource with local-exec
+resource "hcloud_network" "pop_network" {
+  name     = "opensase-${var.pop_config.name}-net"
+  ip_range = "10.${var.pop_config.network_id}.0.0/16"
+}
 
-resource "null_resource" "order_server" {
-  count = var.instance_count
+resource "hcloud_network_subnet" "pop_subnet" {
+  network_id   = hcloud_network.pop_network.id
+  type         = "server"
+  network_zone = var.pop_config.location == "hel1" ? "eu-central" : "eu-central"
+  ip_range     = "10.${var.pop_config.network_id}.1.0/24"
+}
+
+# ===========================================
+# Firewall
+# ===========================================
+
+resource "hcloud_firewall" "pop_firewall" {
+  name = "opensase-${var.pop_config.name}-fw"
   
-  triggers = {
-    pop_name = var.pop_name
-    index    = count.index
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "22"
+    source_ips = var.management_ips
   }
   
-  provisioner "local-exec" {
-    command = <<-EOF
-      #!/bin/bash
-      # Hetzner Robot API - Order dedicated server
-      
-      ROBOT_USER="${var.robot_user}"
-      ROBOT_PASS="${var.robot_password}"
-      
-      # Search for available server
-      AVAILABLE=$(curl -s -u "$ROBOT_USER:$ROBOT_PASS" \
-        "https://robot-ws.your-server.de/order/server/product" | \
-        jq -r '.[] | select(.name == "${var.server_type}") | .id')
-      
-      if [ -n "$AVAILABLE" ]; then
-        echo "Found available ${var.server_type} server"
-        
-        # Order the server
-        curl -s -u "$ROBOT_USER:$ROBOT_PASS" \
-          -X POST "https://robot-ws.your-server.de/order/server/transaction" \
-          -d "product_id=$AVAILABLE" \
-          -d "location=${local.dc_mapping[var.datacenter]}" \
-          -d "ssh_key=${var.ssh_public_key}" \
-          -d "comment=OBMO ${var.pop_name} Server ${count.index + 1}"
-      fi
-    EOF
+  rule {
+    direction  = "in"
+    protocol   = "udp"
+    port       = "51820"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+  
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "443"
+    source_ips = ["0.0.0.0/0", "::/0"]
+  }
+  
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "179"
+    source_ips = var.bgp_peer_ips
+  }
+  
+  rule {
+    direction  = "in"
+    protocol   = "tcp"
+    port       = "8080"
+    source_ips = var.management_ips
   }
 }
 
 # ===========================================
-# Server Configuration via Robot API
+# Robot API Script for Server Ordering
 # ===========================================
 
-resource "null_resource" "configure_server" {
-  count = var.instance_count
+resource "local_file" "hetzner_order_script" {
+  filename = "${path.module}/scripts/order-${var.pop_config.name}.sh"
+  file_permission = "0755"
   
-  depends_on = [null_resource.order_server]
-  
-  triggers = {
-    config_hash = sha256(templatefile("${path.module}/templates/bootstrap.sh.tpl", {
-      pop_name       = var.pop_name
-      server_index   = count.index + 1
-      controller_url = var.controller_url
-      activation_key = var.activation_key
-      nic_type       = local.spec.nic_type
-      nic_speed      = local.spec.speed
-    }))
-  }
-  
-  provisioner "local-exec" {
-    command = <<-EOF
-      #!/bin/bash
-      # Wait for server to be ready and configure
-      
-      ROBOT_USER="${var.robot_user}"
-      ROBOT_PASS="${var.robot_password}"
-      
-      # Get server IP from Robot API
-      SERVER_IP=$(curl -s -u "$ROBOT_USER:$ROBOT_PASS" \
-        "https://robot-ws.your-server.de/server" | \
-        jq -r '.[] | select(.server.server_name | contains("${var.pop_name}")) | .server.server_ip' | \
-        head -1)
-      
-      if [ -n "$SERVER_IP" ]; then
-        echo "Configuring server at $SERVER_IP"
-        
-        # Run Ansible playbook
-        ansible-playbook \
-          -i "$SERVER_IP," \
-          -u root \
-          "${path.module}/../../../ansible/playbooks/bare-metal-setup.yml" \
-          -e "pop_name=${var.pop_name}" \
-          -e "server_index=${count.index + 1}" \
-          -e "nic_type=${local.spec.nic_type}" \
-          -e "nic_speed=${local.spec.speed}"
-      fi
-    EOF
+  content = <<-EOF
+#!/bin/bash
+# Hetzner Robot API - Order Dedicated Server
+# PoP: ${var.pop_config.name}
+
+set -euo pipefail
+
+ROBOT_USER="${var.robot_user}"
+ROBOT_PASS="${var.robot_password}"
+PRODUCT="${local.server_product}"
+DATACENTER="${var.pop_config.location}"
+
+echo "=== Ordering Hetzner Dedicated Server ==="
+echo "Product: $PRODUCT"
+echo "Datacenter: $DATACENTER"
+
+# Search for available server
+AVAILABLE=$(curl -su "$ROBOT_USER:$ROBOT_PASS" \
+  "https://robot-ws.your-server.de/order/server/product" | \
+  jq -r '.[] | select(.name == "'$PRODUCT'") | .id' | head -1)
+
+if [ -z "$AVAILABLE" ]; then
+  echo "ERROR: No $PRODUCT servers available"
+  exit 1
+fi
+
+echo "Found available server: $AVAILABLE"
+
+# Order the server
+curl -su "$ROBOT_USER:$ROBOT_PASS" \
+  -X POST "https://robot-ws.your-server.de/order/server/transaction" \
+  -d "product_id=$AVAILABLE" \
+  -d "location=${local.datacenter_mapping[var.pop_config.location]}" \
+  -d "authorized_key=${var.ssh_public_key}" \
+  -d "comment=OpenSASE ${var.pop_config.name}"
+
+echo "=== Server Order Submitted ==="
+echo "Check Hetzner Robot dashboard for status"
+EOF
+}
+
+locals {
+  datacenter_mapping = {
+    "fsn1" = "FSN1-DC14"
+    "nbg1" = "NBG1-DC3"
+    "hel1" = "HEL1-DC2"
   }
 }
 
 # ===========================================
-# vSwitch for Private Networking
+# Server Configuration Script
 # ===========================================
 
-resource "null_resource" "vswitch" {
-  depends_on = [null_resource.order_server]
+resource "local_file" "configure_script" {
+  filename = "${path.module}/scripts/configure-${var.pop_config.name}.sh"
+  file_permission = "0755"
   
-  provisioner "local-exec" {
-    command = <<-EOF
-      #!/bin/bash
-      ROBOT_USER="${var.robot_user}"
-      ROBOT_PASS="${var.robot_password}"
-      
-      # Create vSwitch
-      curl -s -u "$ROBOT_USER:$ROBOT_PASS" \
-        -X POST "https://robot-ws.your-server.de/vswitch" \
-        -d "name=obmo-${var.pop_name}" \
-        -d "vlan=4000"
-    EOF
-  }
+  content = templatefile("${path.module}/templates/configure.sh.tpl", {
+    pop_name       = var.pop_config.name
+    controller_url = var.pop_config.controller_url
+    activation_key = var.pop_config.activation_key
+    nic_type       = local.nic_info[local.server_product].type
+    nic_speed      = local.nic_info[local.server_product].speed
+    network_id     = hcloud_network.pop_network.id
+  })
 }
 
 # ===========================================
@@ -249,21 +224,22 @@ resource "null_resource" "vswitch" {
 # ===========================================
 
 resource "local_file" "inventory" {
-  filename = "${path.module}/../../../ansible/inventory/hetzner-${var.pop_name}.yml"
+  filename = "${path.module}/../../../ansible/inventory/hetzner-${var.pop_config.name}.yml"
   
   content = yamlencode({
     all = {
       children = {
         hetzner_servers = {
-          hosts = {}  # Populated after provisioning
+          hosts = {}  # Populated after Robot provisioning
           vars = {
             ansible_user       = "root"
-            pop_name           = var.pop_name
+            pop_name           = var.pop_config.name
             provider           = "hetzner"
-            nic_type           = local.spec.nic_type
-            nic_speed          = local.spec.speed
-            controller_url     = var.controller_url
-            activation_key     = var.activation_key
+            nic_type           = local.nic_info[local.server_product].type
+            nic_speed          = local.nic_info[local.server_product].speed
+            controller_url     = var.pop_config.controller_url
+            activation_key     = var.pop_config.activation_key
+            private_network_id = hcloud_network.pop_network.id
           }
         }
       }
@@ -272,20 +248,55 @@ resource "local_file" "inventory" {
 }
 
 # ===========================================
+# vSwitch for Private Networking
+# ===========================================
+
+resource "null_resource" "vswitch" {
+  triggers = {
+    pop_name = var.pop_config.name
+  }
+  
+  provisioner "local-exec" {
+    command = <<-EOF
+      curl -su "${var.robot_user}:${var.robot_password}" \
+        -X POST "https://robot-ws.your-server.de/vswitch" \
+        -d "name=opensase-${var.pop_config.name}" \
+        -d "vlan=40${var.pop_config.network_id}"
+    EOF
+  }
+}
+
+# ===========================================
 # Outputs
 # ===========================================
 
 output "pop_info" {
   value = {
-    name        = var.pop_name
-    datacenter  = var.datacenter
-    server_type = var.server_type
-    nic_type    = local.spec.nic_type
-    speed_gbps  = local.spec.speed
-    price_month = local.spec.price
+    pop_name       = var.pop_config.name
+    location       = var.pop_config.location
+    server_product = local.server_product
+    nic_type       = local.nic_info[local.server_product].type
+    nic_speed      = local.nic_info[local.server_product].speed
+    network_id     = hcloud_network.pop_network.id
   }
 }
 
-output "inventory_path" {
-  value = local_file.inventory.filename
+output "network_id" {
+  value = hcloud_network.pop_network.id
+}
+
+output "order_script" {
+  value = local_file.hetzner_order_script.filename
+}
+
+output "configure_script" {
+  value = local_file.configure_script.filename
+}
+
+output "ssh_key_id" {
+  value = hcloud_ssh_key.opensase.id
+}
+
+output "firewall_id" {
+  value = hcloud_firewall.pop_firewall.id
 }
