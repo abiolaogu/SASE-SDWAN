@@ -56,6 +56,12 @@ pub mod trust;
 pub mod connector;
 pub mod activity;
 pub mod flow;
+pub mod trust_engine;
+pub mod posture;
+pub mod clientless;
+pub mod recording;
+pub mod microseg_enhanced;
+pub mod stepup;
 
 // =============================================================================
 // Core Types
