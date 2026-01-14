@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package opensase.vpp;
+
+// VPP Gateway Service
+// Provides gRPC access to VPP data plane from Kubernetes control plane
+
+service VppGateway {
+    // Interface management
+    rpc GetInterfaces(GetInterfacesRequest) returns (GetInterfacesResponse);
+    
+    // WireGuard tunnel management
+    rpc GetTunnels(GetTunnelsRequest) returns (GetTunnelsResponse);
+    rpc CreateTunnel(CreateTunnelRequest) returns (CreateTunnelResponse);
+    rpc DeleteTunnel(DeleteTunnelRequest) returns (DeleteTunnelResponse);
+    
+    // ACL management
+    rpc ApplyAcl(ApplyAclRequest) returns (ApplyAclResponse);
+    
+    // Statistics
+    rpc GetStats(GetStatsRequest) returns (GetStatsResponse);
+    
+    // Health
+    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+// Interface messages
+message GetInterfacesRequest {}
+
+message GetInterfacesResponse {
+    repeated Interface interfaces = 1;
+}
+
+message Interface {
+    string name = 1;
+    uint32 sw_if_index = 2;
+    string mac_address = 3;
+    bool admin_up = 4;
+    bool link_up = 5;
+    uint64 rx_bytes = 6;
+    uint64 tx_bytes = 7;
+    uint64 rx_packets = 8;
+    uint64 tx_packets = 9;
+}
+
+// Tunnel messages
+message GetTunnelsRequest {}
+
+message GetTunnelsResponse {
+    repeated Tunnel tunnels = 1;
+}
+
+message Tunnel {
+    string id = 1;
+    string peer_public_key = 2;
+    string endpoint = 3;
+    int64 last_handshake = 4;
+    uint64 rx_bytes = 5;
+    uint64 tx_bytes = 6;
+}
+
+message CreateTunnelRequest {
+    uint32 listen_port = 1;
+    string private_key = 2;  // base64 encoded
+    string local_ip = 3;
+    string peer_public_key = 4;  // base64 encoded
+    string peer_endpoint = 5;  // ip:port
+    repeated string allowed_ips = 6;
+}
+
+message CreateTunnelResponse {
+    string tunnel_id = 1;
+}
+
+message DeleteTunnelRequest {
+    string tunnel_id = 1;
+}
+
+message DeleteTunnelResponse {
+    bool success = 1;
+}
+
+// ACL messages
+message ApplyAclRequest {
+    string interface_id = 1;
+    repeated AclRule rules = 2;
+}
+
+message AclRule {
+    string action = 1;  // "allow" or "deny"
+    string source = 2;  // CIDR
+    string destination = 3;  // CIDR
+    uint32 protocol = 4;  // 6=TCP, 17=UDP, etc.
+    uint32 src_port_start = 5;
+    uint32 src_port_end = 6;
+    uint32 dst_port_start = 7;
+    uint32 dst_port_end = 8;
+}
+
+message ApplyAclResponse {
+    string acl_id = 1;
+}
+
+// Stats messages
+message GetStatsRequest {}
+
+message GetStatsResponse {
+    uint64 total_rx_bytes = 1;
+    uint64 total_tx_bytes = 2;
+    uint64 total_rx_packets = 3;
+    uint64 total_tx_packets = 4;
+    uint32 active_sessions = 5;
+    uint32 active_tunnels = 6;
+}
+
+// Health messages
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+    bool healthy = 1;
+    string version = 2;
+    uint64 uptime_seconds = 3;
+}

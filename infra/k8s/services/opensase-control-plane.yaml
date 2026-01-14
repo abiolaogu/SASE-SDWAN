@@ -1,0 +1,505 @@
+# OpenSASE Control Plane Services
+# Kubernetes deployments for PoP control plane
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opensase
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+
+---
+# =============================================================================
+# Secrets
+# =============================================================================
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: opensase-secrets
+  namespace: opensase
+type: Opaque
+stringData:
+  database-url: "${DATABASE_URL}"
+  jwt-secret: "${JWT_SECRET}"
+  vpp-api-key: "${VPP_API_KEY}"
+
+---
+# =============================================================================
+# ConfigMap
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: opensase-config
+  namespace: opensase
+data:
+  POP_NAME: "${POP_NAME}"
+  REGION: "${REGION}"
+  API_PORT: "8080"
+  GRPC_PORT: "50051"
+  LOG_LEVEL: "info"
+  VPP_SOCKET: "/run/vpp/cli.sock"
+
+---
+# =============================================================================
+# API Server Deployment
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+  namespace: opensase
+  labels:
+    app: api-server
+    component: control-plane
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: api-server
+  template:
+    metadata:
+      labels:
+        app: api-server
+        component: control-plane
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: opensase-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api-server
+          image: ghcr.io/opensase/api-server:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: grpc
+              containerPort: 50051
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: opensase-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: opensase-secrets
+                  key: database-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: opensase-secrets
+                  key: jwt-secret
+            - name: VPP_GRPC_ADDRESS
+              value: "vpp-gateway.opensase.svc.cluster.local:50052"
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 4Gi
+            requests:
+              cpu: 500m
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: api-server
+                topologyKey: kubernetes.io/hostname
+
+---
+# =============================================================================
+# Portal Deployment (Next.js/React)
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portal
+  namespace: opensase
+  labels:
+    app: portal
+    component: control-plane
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: portal
+  template:
+    metadata:
+      labels:
+        app: portal
+        component: control-plane
+    spec:
+      serviceAccountName: opensase-portal
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: portal
+          image: ghcr.io/opensase/portal:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: API_URL
+              value: "http://api-server.opensase.svc.cluster.local:8080"
+            - name: NEXT_PUBLIC_API_URL
+              value: "https://api.${POP_NAME}.opensase.io"
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+            requests:
+              cpu: 200m
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: next-cache
+              mountPath: /app/.next/cache
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: next-cache
+          emptyDir: {}
+
+---
+# =============================================================================
+# VPP Gateway DaemonSet (connects K8s to bare-metal VPP)
+# =============================================================================
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vpp-gateway
+  namespace: opensase
+  labels:
+    app: vpp-gateway
+    component: data-plane-integration
+spec:
+  selector:
+    matchLabels:
+      app: vpp-gateway
+  template:
+    metadata:
+      labels:
+        app: vpp-gateway
+        component: data-plane-integration
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      hostNetwork: true  # Required to reach VPP socket
+      hostPID: false
+      serviceAccountName: opensase-vpp-gateway
+      containers:
+        - name: vpp-gateway
+          image: ghcr.io/opensase/vpp-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - name: grpc
+              containerPort: 50052
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: VPP_SOCKET
+              value: "/run/vpp/cli.sock"
+            - name: RUST_LOG
+              value: "info"
+          resources:
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          securityContext:
+            privileged: true  # Required for VPP socket access
+          volumeMounts:
+            - name: vpp-socket
+              mountPath: /run/vpp
+            - name: sys
+              mountPath: /sys
+              readOnly: true
+          livenessProbe:
+            grpc:
+              port: 50052
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            grpc:
+              port: 50052
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: vpp-socket
+          hostPath:
+            path: /run/vpp
+            type: Directory
+        - name: sys
+          hostPath:
+            path: /sys
+            type: Directory
+      tolerations:
+        - operator: Exists
+
+---
+# =============================================================================
+# Services
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-server
+  namespace: opensase
+  labels:
+    app: api-server
+spec:
+  selector:
+    app: api-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: grpc
+      port: 50051
+      targetPort: 50051
+      protocol: TCP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portal
+  namespace: opensase
+  annotations:
+    io.cilium/lb-ipam-ips: "${PORTAL_VIP}"
+spec:
+  type: LoadBalancer
+  selector:
+    app: portal
+  ports:
+    - name: https
+      port: 443
+      targetPort: 3000
+      protocol: TCP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vpp-gateway
+  namespace: opensase
+spec:
+  selector:
+    app: vpp-gateway
+  ports:
+    - name: grpc
+      port: 50052
+      targetPort: 50052
+      protocol: TCP
+
+---
+# =============================================================================
+# Service Accounts
+# =============================================================================
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opensase-api
+  namespace: opensase
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opensase-portal
+  namespace: opensase
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opensase-vpp-gateway
+  namespace: opensase
+
+---
+# =============================================================================
+# Ingress (Cilium)
+# =============================================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: opensase-ingress
+  namespace: opensase
+  annotations:
+    kubernetes.io/ingress.class: cilium
+    ingress.cilium.io/tls-passthrough: "false"
+spec:
+  tls:
+    - hosts:
+        - portal.${POP_NAME}.opensase.io
+        - api.${POP_NAME}.opensase.io
+      secretName: opensase-tls
+  rules:
+    - host: portal.${POP_NAME}.opensase.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: portal
+                port:
+                  number: 3000
+    - host: api.${POP_NAME}.opensase.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-server
+                port:
+                  number: 8080
+
+---
+# =============================================================================
+# Horizontal Pod Autoscaler
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-server-hpa
+  namespace: opensase
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-server
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# =============================================================================
+# Pod Disruption Budget
+# =============================================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-server-pdb
+  namespace: opensase
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: api-server
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: portal-pdb
+  namespace: opensase
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: portal

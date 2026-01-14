@@ -1,0 +1,386 @@
+# Observability Stack for OpenSASE Control Plane
+# Prometheus, Grafana, and VPP metrics integration
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+
+---
+# =============================================================================
+# Prometheus Operator (via Flux HelmRelease)
+# =============================================================================
+
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: kube-prometheus-stack
+  namespace: monitoring
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: "55.x"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: flux-system
+  values:
+    # Prometheus configuration
+    prometheus:
+      prometheusSpec:
+        retention: 30d
+        retentionSize: 90GB
+        
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: local-path
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 100Gi
+        
+        # Resource limits
+        resources:
+          limits:
+            cpu: 2000m
+            memory: 8Gi
+          requests:
+            cpu: 500m
+            memory: 2Gi
+        
+        # Additional scrape configs
+        additionalScrapeConfigs:
+          # VPP metrics exporter
+          - job_name: 'vpp-metrics'
+            static_configs:
+              - targets: ['vpp-exporter.opensase.svc.cluster.local:9482']
+            relabel_configs:
+              - source_labels: [__address__]
+                target_label: instance
+                replacement: '${1}'
+          
+          # OpenSASE API metrics
+          - job_name: 'opensase-api'
+            kubernetes_sd_configs:
+              - role: pod
+                namespaces:
+                  names:
+                    - opensase
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_label_app]
+                regex: api-server
+                action: keep
+              - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
+                target_label: __address__
+                regex: (.+)
+                replacement: '${__meta_kubernetes_pod_ip}:${1}'
+          
+          # Cilium metrics
+          - job_name: 'cilium-agent'
+            kubernetes_sd_configs:
+              - role: pod
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_label_k8s_app]
+                regex: cilium
+                action: keep
+              - source_labels: [__meta_kubernetes_pod_container_port_number]
+                regex: "9962"
+                action: keep
+          
+          # Hubble metrics
+          - job_name: 'hubble'
+            kubernetes_sd_configs:
+              - role: pod
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_pod_label_k8s_app]
+                regex: hubble
+                action: keep
+    
+    # Grafana configuration
+    grafana:
+      enabled: true
+      adminPassword: ${GRAFANA_PASSWORD}
+      
+      ingress:
+        enabled: true
+        annotations:
+          kubernetes.io/ingress.class: cilium
+        hosts:
+          - grafana.${POP_NAME}.opensase.io
+        tls:
+          - secretName: grafana-tls
+            hosts:
+              - grafana.${POP_NAME}.opensase.io
+      
+      # Dashboard providers
+      dashboardProviders:
+        dashboardproviders.yaml:
+          apiVersion: 1
+          providers:
+            - name: 'opensase'
+              orgId: 1
+              folder: 'OpenSASE'
+              type: file
+              disableDeletion: true
+              editable: false
+              options:
+                path: /var/lib/grafana/dashboards/opensase
+            - name: 'cilium'
+              orgId: 1
+              folder: 'Cilium'
+              type: file
+              disableDeletion: true
+              options:
+                path: /var/lib/grafana/dashboards/cilium
+      
+      # Dashboard ConfigMaps
+      dashboardsConfigMaps:
+        opensase: "grafana-dashboards-opensase"
+        cilium: "grafana-dashboards-cilium"
+      
+      # Plugins
+      plugins:
+        - grafana-piechart-panel
+        - grafana-clock-panel
+        - grafana-worldmap-panel
+      
+      # Data sources
+      additionalDataSources:
+        - name: Hubble
+          type: prometheus
+          url: http://hubble-metrics.kube-system.svc.cluster.local:9965
+          access: proxy
+    
+    # Alertmanager
+    alertmanager:
+      enabled: true
+      alertmanagerSpec:
+        storage:
+          volumeClaimTemplate:
+            spec:
+              storageClassName: local-path
+              resources:
+                requests:
+                  storage: 10Gi
+      
+      config:
+        global:
+          smtp_smarthost: 'smtp.opensase.io:587'
+          smtp_from: 'alerts@opensase.io'
+        
+        route:
+          group_by: ['alertname', 'cluster', 'service']
+          group_wait: 30s
+          group_interval: 5m
+          repeat_interval: 12h
+          receiver: 'opensase-ops'
+          routes:
+            - match:
+                severity: critical
+              receiver: 'opensase-critical'
+            - match:
+                severity: warning
+              receiver: 'opensase-warning'
+        
+        receivers:
+          - name: 'opensase-ops'
+            email_configs:
+              - to: 'ops@opensase.io'
+          - name: 'opensase-critical'
+            pagerduty_configs:
+              - service_key: '${PAGERDUTY_KEY}'
+            email_configs:
+              - to: 'critical@opensase.io'
+          - name: 'opensase-warning'
+            slack_configs:
+              - api_url: '${SLACK_WEBHOOK}'
+                channel: '#alerts'
+
+---
+# =============================================================================
+# VPP Prometheus Exporter
+# =============================================================================
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: vpp-exporter
+  namespace: opensase
+spec:
+  selector:
+    matchLabels:
+      app: vpp-exporter
+  template:
+    metadata:
+      labels:
+        app: vpp-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9482"
+    spec:
+      hostNetwork: true
+      containers:
+        - name: vpp-exporter
+          image: ghcr.io/opensase/vpp-exporter:latest
+          ports:
+            - containerPort: 9482
+              name: metrics
+          volumeMounts:
+            - name: vpp-socket
+              mountPath: /run/vpp
+          securityContext:
+            privileged: true
+      volumes:
+        - name: vpp-socket
+          hostPath:
+            path: /run/vpp
+            type: Directory
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vpp-exporter
+  namespace: opensase
+spec:
+  selector:
+    app: vpp-exporter
+  ports:
+    - port: 9482
+      targetPort: 9482
+      name: metrics
+
+---
+# =============================================================================
+# Custom Prometheus Rules for OpenSASE
+# =============================================================================
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: opensase-alerts
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  groups:
+    - name: opensase.rules
+      rules:
+        # VPP interface down
+        - alert: VppInterfaceDown
+          expr: vpp_interface_state{state="down"} == 1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "VPP interface {{ $labels.interface }} is down"
+            description: "Interface {{ $labels.interface }} on {{ $labels.instance }} has been down for more than 2 minutes"
+        
+        # High packet drop rate
+        - alert: VppHighDropRate
+          expr: rate(vpp_interface_drops_total[5m]) > 1000
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High packet drop rate on VPP"
+            description: "Drop rate on {{ $labels.interface }} is {{ $value }} pps"
+        
+        # API server unavailable
+        - alert: ApiServerUnavailable
+          expr: up{job="opensase-api"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "OpenSASE API server is unavailable"
+            description: "API server on {{ $labels.instance }} is down"
+        
+        # High API latency
+        - alert: ApiHighLatency
+          expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job="opensase-api"}[5m])) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High API latency detected"
+            description: "99th percentile latency is {{ $value }}s"
+        
+        # Cilium endpoint not ready
+        - alert: CiliumEndpointNotReady
+          expr: cilium_endpoint_state{state!="ready"} > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Cilium endpoints not ready"
+            description: "{{ $value }} endpoints in {{ $labels.state }} state"
+
+---
+# =============================================================================
+# Grafana Dashboard ConfigMap (VPP Overview)
+# =============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards-opensase
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  vpp-overview.json: |
+    {
+      "title": "VPP Data Plane Overview",
+      "uid": "vpp-overview",
+      "panels": [
+        {
+          "title": "Interface Traffic (bps)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "targets": [
+            {
+              "expr": "rate(vpp_interface_rx_bytes_total[5m]) * 8",
+              "legendFormat": "{{interface}} RX"
+            },
+            {
+              "expr": "rate(vpp_interface_tx_bytes_total[5m]) * 8",
+              "legendFormat": "{{interface}} TX"
+            }
+          ]
+        },
+        {
+          "title": "Packet Rate (pps)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "targets": [
+            {
+              "expr": "rate(vpp_interface_rx_packets_total[5m])",
+              "legendFormat": "{{interface}} RX"
+            }
+          ]
+        },
+        {
+          "title": "WireGuard Tunnels",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+          "targets": [
+            {"expr": "count(vpp_wireguard_tunnel_up == 1)"}
+          ]
+        },
+        {
+          "title": "Active ACLs",
+          "type": "stat",
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 8},
+          "targets": [
+            {"expr": "vpp_acl_count"}
+          ]
+        }
+      ]
+    }

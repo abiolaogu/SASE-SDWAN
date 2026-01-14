@@ -1,0 +1,241 @@
+# Cilium Helm Values
+# High-performance eBPF networking for OpenSASE
+#
+# Features:
+# - XDP acceleration for 10+ Gbps
+# - WireGuard encryption between nodes
+# - Hubble observability
+# - Cluster mesh for multi-PoP
+
+# Cluster identification
+cluster:
+  name: opensase-${POP_NAME}
+  id: ${CLUSTER_ID}
+
+# Replace kube-proxy with eBPF
+kubeProxyReplacement: true
+k8sServiceHost: ${CONTROL_PLANE_VIP}
+k8sServicePort: 6443
+
+#===============================================================================
+# XDP/eBPF Acceleration
+#===============================================================================
+
+# Load balancer acceleration
+loadBalancer:
+  acceleration: native  # XDP native mode
+  mode: dsr             # Direct Server Return
+  algorithm: maglev     # Consistent hashing
+
+# eBPF host routing
+bpf:
+  masquerade: true
+  hostRouting: true
+  tproxy: true
+  lbMapMax: 65536
+  policyMapMax: 65536
+  lbExternalClusterIP: true
+
+# Native routing mode (required for DSR)
+routingMode: native
+ipv4NativeRoutingCIDR: 10.0.0.0/8
+autoDirectNodeRoutes: true
+
+# Enable Maglev for consistent hashing
+maglev:
+  tableSize: 65521
+
+#===============================================================================
+# Hubble Observability
+#===============================================================================
+
+hubble:
+  enabled: true
+  
+  relay:
+    enabled: true
+    replicas: 1
+    
+  ui:
+    enabled: true
+    replicas: 1
+    ingress:
+      enabled: true
+      annotations:
+        kubernetes.io/ingress.class: cilium
+      hosts:
+        - hubble.${POP_NAME}.opensase.io
+        
+  metrics:
+    enabled:
+      - dns:query
+      - drop
+      - tcp
+      - flow
+      - httpV2:exemplars=true
+      - icmp
+      - port-distribution
+    serviceMonitor:
+      enabled: true
+
+#===============================================================================
+# Bandwidth Manager & TCP Optimization
+#===============================================================================
+
+bandwidthManager:
+  enabled: true
+  bbr: true
+
+# Socket LB for local redirect
+socketLB:
+  enabled: true
+
+#===============================================================================
+# Encryption
+#===============================================================================
+
+encryption:
+  enabled: true
+  type: wireguard
+  nodeEncryption: true
+  wireguard:
+    userspaceFallback: false
+
+#===============================================================================
+# IPAM Configuration
+#===============================================================================
+
+ipam:
+  mode: kubernetes
+
+# Pod CIDR
+ipv4:
+  enabled: true
+ipv6:
+  enabled: false  # Enable when needed
+
+#===============================================================================
+# BGP for External Routing
+#===============================================================================
+
+bgp:
+  enabled: true
+  announce:
+    loadbalancerIP: true
+    podCIDR: true
+
+bgpControlPlane:
+  enabled: true
+
+#===============================================================================
+# Ingress Controller
+#===============================================================================
+
+ingressController:
+  enabled: true
+  default: true
+  loadBalancerMode: shared
+  enforceHttps: true
+  secretsNamespace:
+    create: true
+    name: cilium-secrets
+
+#===============================================================================
+# Gateway API
+#===============================================================================
+
+gatewayAPI:
+  enabled: true
+
+#===============================================================================
+# Cluster Mesh (Multi-PoP)
+#===============================================================================
+
+clustermesh:
+  useAPIServer: true
+  apiserver:
+    replicas: 1
+    service:
+      type: LoadBalancer
+      annotations:
+        io.cilium/lb-ipam-ips: "${CLUSTERMESH_VIP}"
+    tls:
+      auto:
+        enabled: true
+        method: helm
+
+#===============================================================================
+# Network Policies
+#===============================================================================
+
+policyEnforcementMode: "default"
+hostFirewall:
+  enabled: true
+
+#===============================================================================
+# Resources
+#===============================================================================
+
+operator:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+resources:
+  limits:
+    cpu: 4000m
+    memory: 4Gi
+  requests:
+    cpu: 100m
+    memory: 512Mi
+
+#===============================================================================
+# Node Affinity
+#===============================================================================
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: node-role.kubernetes.io/control-plane
+              operator: Exists
+
+tolerations:
+  - operator: Exists
+
+#===============================================================================
+# Prometheus Metrics
+#===============================================================================
+
+prometheus:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: prometheus
+
+#===============================================================================
+# Debug/Extra
+#===============================================================================
+
+debug:
+  enabled: false
+
+# Mount BPF filesystem
+bpfMount: /sys/fs/bpf
+
+# Enable identity allocation via CRDs
+identityAllocationMode: crd
+
+# Kubernetes version
+kubeVersion: "1.29"
