@@ -32,6 +32,9 @@ pub mod policy;
 pub mod session;
 pub mod input;
 pub mod download;
+pub mod swg;
+pub mod pool;
+pub mod encoder;
 
 // =============================================================================
 // Session Types
