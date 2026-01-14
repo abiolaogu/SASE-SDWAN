@@ -1,0 +1,72 @@
+# VPP Startup Configuration
+# Managed by Ansible
+
+unix {
+    nodaemon
+    cli-listen /run/vpp/cli.sock
+    log /var/log/vpp/vpp.log
+    full-coredump
+    gid vpp
+}
+
+api-trace {
+    on
+}
+
+api-segment {
+    gid vpp
+}
+
+socksvr {
+    default
+}
+
+cpu {
+    main-core {{ vpp_main_core | default(0) }}
+{% if vpp_worker_cores is defined %}
+    corelist-workers {{ vpp_worker_cores }}
+{% else %}
+    corelist-workers 1-{{ ansible_processor_vcpus - 1 | default(3) }}
+{% endif %}
+    scheduler-policy fifo
+    scheduler-priority 50
+}
+
+dpdk {
+    dev default {
+        num-rx-queues {{ vpp_rx_queues | default(2) }}
+        num-tx-queues {{ vpp_tx_queues | default(2) }}
+    }
+{% for nic in vpp_dpdk_nics | default([]) %}
+    dev {{ nic.pci }}
+{% endfor %}
+    uio-driver vfio-pci
+    socket-mem {{ vpp_socket_mem | default('1024') }}
+    num-mbufs {{ vpp_mbufs | default(131072) }}
+}
+
+plugins {
+    plugin default { enable }
+    plugin dpdk_plugin.so { enable }
+    plugin wireguard_plugin.so { enable }
+    plugin nat_plugin.so { enable }
+    plugin acl_plugin.so { enable }
+    plugin ping_plugin.so { enable }
+}
+
+buffers {
+    buffers-per-numa {{ vpp_buffers | default(128000) }}
+    default data-size 2048
+}
+
+statseg {
+    socket-name /var/run/vpp/stats.sock
+    size 128M
+    per-node-counters on
+}
+
+{% if vpp_nat_enabled | default(true) %}
+nat {
+    max translations per user 10000
+}
+{% endif %}

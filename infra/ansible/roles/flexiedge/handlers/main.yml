@@ -1,0 +1,8 @@
+# FlexiEdge Handlers
+
+---
+- name: Restart FlexiEdge
+  systemd:
+    name: flexiwan
+    state: restarted
+    daemon_reload: yes

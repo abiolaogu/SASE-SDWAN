@@ -1,0 +1,20 @@
+{
+    "deviceName": "{{ pop_name }}",
+    "dataPlane": "vpp",
+    "vppSocketPath": "/run/vpp/cli.sock",
+    "vppApiSocket": "/run/vpp/api.sock",
+    "managementUrl": "{{ flexiwan_url | default('https://manage.opensase.io') }}",
+    "token": "{{ flexiwan_token }}",
+    "logLevel": "{{ flexiwan_log_level | default('info') }}",
+    "telemetryInterval": {{ flexiwan_telemetry_interval | default(30) }},
+    "healthCheckInterval": {{ flexiwan_health_interval | default(10) }},
+    "tunnelKeepalive": {{ flexiwan_keepalive | default(25) }},
+    "features": {
+        "sdwan": {{ flexiwan_feature_sdwan | default('true') | lower }},
+        "firewall": {{ flexiwan_feature_firewall | default('true') | lower }},
+        "nat": {{ flexiwan_feature_nat | default('true') | lower }},
+        "qos": {{ flexiwan_feature_qos | default('true') | lower }},
+        "ipsec": {{ flexiwan_feature_ipsec | default('false') | lower }},
+        "wireguard": {{ flexiwan_feature_wireguard | default('true') | lower }}
+    }
+}

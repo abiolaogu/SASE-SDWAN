@@ -1,0 +1,8 @@
+# VPP Handlers
+
+---
+- name: Restart VPP
+  systemd:
+    name: vpp
+    state: restarted
+    daemon_reload: yes

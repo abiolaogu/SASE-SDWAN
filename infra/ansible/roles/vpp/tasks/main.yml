@@ -1,0 +1,74 @@
+# VPP Role - Main Tasks
+
+---
+- name: Install VPP repository
+  shell: curl -sL https://packagecloud.io/install/repositories/fdio/release/script.deb.sh | bash
+  args:
+    creates: /etc/apt/sources.list.d/fdio_release.list
+
+- name: Install VPP packages
+  apt:
+    name:
+      - vpp
+      - vpp-plugin-core
+      - vpp-plugin-dpdk
+      - vpp-plugin-wireguard
+      - vpp-plugin-nat
+      - vpp-plugin-acl
+    state: present
+    update_cache: yes
+
+- name: Create VPP directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: vpp
+    group: vpp
+    mode: '0755'
+  loop:
+    - /etc/vpp
+    - /var/log/vpp
+    - /run/vpp
+
+- name: Deploy VPP startup configuration
+  template:
+    src: startup.conf.j2
+    dest: /etc/vpp/startup.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart VPP
+
+- name: Configure hugepages mount
+  mount:
+    path: /dev/hugepages
+    src: hugetlbfs
+    fstype: hugetlbfs
+    opts: defaults
+    state: mounted
+
+- name: Enable VPP service
+  systemd:
+    name: vpp
+    enabled: yes
+
+- name: Start VPP service
+  systemd:
+    name: vpp
+    state: started
+  register: vpp_start
+
+- name: Wait for VPP socket
+  wait_for:
+    path: /run/vpp/cli.sock
+    timeout: 60
+  when: vpp_start.changed
+
+- name: Verify VPP is running
+  command: vppctl show version
+  register: vpp_version
+  changed_when: false
+
+- name: Display VPP version
+  debug:
+    var: vpp_version.stdout_lines[0]

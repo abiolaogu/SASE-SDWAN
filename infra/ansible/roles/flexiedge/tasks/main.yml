@@ -1,0 +1,54 @@
+# FlexiEdge Role - Main Tasks
+
+---
+- name: Install FlexiEdge repository
+  shell: curl -sL https://deb.flexiwan.com/setup | bash
+  args:
+    creates: /etc/apt/sources.list.d/flexiwan.list
+
+- name: Install FlexiEdge
+  apt:
+    name: flexiwan-router
+    state: present
+    update_cache: yes
+
+- name: Create FlexiWAN directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/flexiwan
+    - /var/log/flexiwan
+    - /var/lib/flexiwan
+
+- name: Deploy FlexiEdge configuration
+  template:
+    src: agent.conf.j2
+    dest: /etc/flexiwan/agent.conf
+    mode: '0600'
+  notify: Restart FlexiEdge
+
+- name: Enable FlexiEdge service
+  systemd:
+    name: flexiwan
+    enabled: yes
+
+- name: Start FlexiEdge service
+  systemd:
+    name: flexiwan
+    state: started
+
+- name: Wait for FlexiEdge to connect
+  wait_for:
+    timeout: 60
+  when: flexiwan_wait_connect | default(false)
+
+- name: Check FlexiEdge status
+  command: systemctl is-active flexiwan
+  register: flexiedge_status
+  changed_when: false
+
+- name: Display FlexiEdge status
+  debug:
+    msg: "FlexiEdge status: {{ flexiedge_status.stdout }}"
