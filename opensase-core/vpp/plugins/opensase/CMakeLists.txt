@@ -1,20 +1,23 @@
 # OpenSASE VPP Plugin - CMakeLists.txt
 # Builds the main SASE data plane plugin
-# Target: 100 Gbps with <5μs latency
+# Target: 100 Gbps with <5μs latency - Single-Pass Processing
 
 cmake_minimum_required(VERSION 3.16)
 
-# Sources for the opensase plugin - ordered by packet flow
+# Sources for the opensase plugin - ordered by VPP graph flow
+# dpdk-input → tenant-classifier → acl → security-inspect → nat → wireguard → dpdk-output
 set(OPENSASE_SOURCES
-    opensase.c          # Plugin registration
-    node_tenant.c       # Tenant lookup (input)
-    node_security.c     # Session tracking
-    node_policy.c       # Policy enforcement
-    node_dlp.c          # DLP inspection
-    node_classify.c     # App classification
-    node_qos.c          # QoS marking
-    node_nat.c          # NAT/PAT
-    node_encap.c        # Encapsulation (output)
+    opensase.c              # Plugin registration
+    node_vxlan_classifier.c # VXLAN VNI to tenant (entry point)
+    node_tenant.c           # IP-based tenant lookup (fallback)
+    node_security.c         # Session tracking
+    node_security_inspect.c # IPS with Hyperscan
+    node_policy.c           # Policy enforcement
+    node_dlp.c              # DLP inspection
+    node_classify.c         # App classification
+    node_qos.c              # QoS marking
+    node_nat.c              # NAT/PAT
+    node_encap.c            # Encapsulation (output)
 )
 
 
