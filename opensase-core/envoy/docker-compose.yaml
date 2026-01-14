@@ -1,0 +1,175 @@
+# OpenSASE Layer 7 Gateway - Docker Compose
+#
+# Deploys Envoy Proxy with xDS control plane for
+# SWG, CASB, and ZTNA functionality.
+
+version: "3.8"
+
+services:
+  # ===========================================
+  # Envoy Proxy - Main L7 Gateway
+  # ===========================================
+  envoy:
+    image: envoyproxy/envoy:v1.29-latest
+    container_name: opensase-envoy
+    restart: unless-stopped
+    ports:
+      - "80:80" # HTTP (redirect)
+      - "443:443" # HTTPS (SWG/CASB)
+      - "8443:8443" # ZTNA
+      - "9901:9901" # Admin
+    volumes:
+      - ./envoy/config/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+      - ./envoy/wasm:/etc/envoy/wasm:ro
+      - envoy-logs:/var/log/envoy
+    environment:
+      - ENVOY_UID=0
+      - POD_NAME=standalone
+    command:
+      - /usr/local/bin/envoy
+      - -c
+      - /etc/envoy/envoy.yaml
+      - --log-level
+      - info
+      - --component-log-level
+      - upstream:debug,connection:debug
+    networks:
+      - opensase-net
+    depends_on:
+      - xds-server
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 16G
+        reservations:
+          cpus: "4"
+          memory: 8G
+
+  # ===========================================
+  # xDS Control Plane
+  # ===========================================
+  xds-server:
+    image: opensase/xds-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.xds
+    container_name: opensase-xds
+    restart: unless-stopped
+    ports:
+      - "18000:18000" # gRPC xDS
+      - "8080:8080" # HTTP API
+    volumes:
+      - ./config:/config:ro
+    environment:
+      - RUST_LOG=info
+      - XDS_PORT=18000
+      - API_PORT=8080
+    networks:
+      - opensase-net
+
+  # ===========================================
+  # Policy Engine
+  # ===========================================
+  policy-engine:
+    image: opensase/policy-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.policy
+    container_name: opensase-policy
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    environment:
+      - RUST_LOG=info
+      - DATABASE_URL=postgres://postgres:password@postgres:5432/opensase
+    networks:
+      - opensase-net
+    depends_on:
+      - postgres
+
+  # ===========================================
+  # Authentication Service
+  # ===========================================
+  auth-service:
+    image: opensase/auth-service:latest
+    container_name: opensase-auth
+    restart: unless-stopped
+    ports:
+      - "9001:9001"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-opensase-jwt-secret-change-me}
+      - OIDC_ISSUER=https://auth.opensase.io
+    networks:
+      - opensase-net
+
+  # ===========================================
+  # PostgreSQL (Policy Store)
+  # ===========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: opensase-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=opensase
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - opensase-net
+
+  # ===========================================
+  # Prometheus (Metrics)
+  # ===========================================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: opensase-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - opensase-net
+
+  # ===========================================
+  # Grafana (Dashboards)
+  # ===========================================
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: opensase-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - opensase-net
+    depends_on:
+      - prometheus
+
+networks:
+  opensase-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+
+volumes:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+  envoy-logs:
