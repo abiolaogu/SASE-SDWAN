@@ -20,6 +20,7 @@ members = [
     "crates/sase-backbone",
     "crates/sase-billing",
     "crates/sase-resilience",
+    "crates/sase-vpp",
 ]
 
 [workspace.package]
