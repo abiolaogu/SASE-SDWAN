@@ -1,0 +1,46 @@
+# OpenSASE VPP - TRex Traffic Generator Configuration
+#
+# Configuration file for TRex v3.00+
+# Generates 100 Gbps traffic for VPP benchmarking
+#
+# Hardware Requirements:
+# - 2x 100GbE NICs (dedicated to TRex)
+# - 32+ CPU cores
+# - 64GB+ RAM with hugepages
+#
+# Usage:
+#   sudo ./t-rex-64 -i -c 8 --cfg /etc/trex_cfg.yaml
+
+- port_limit: 2
+  version: 2
+  
+  # NIC PCI addresses (adjust for your hardware)
+  # Use 'lspci | grep -i ethernet' to find
+  interfaces: ["0000:42:00.0", "0000:42:00.1"]
+  
+  # Port IP configuration
+  port_info:
+    - ip: 10.0.0.1
+      default_gw: 10.0.0.2
+    - ip: 10.0.1.1
+      default_gw: 10.0.1.2
+  
+  # Platform configuration for high performance
+  platform:
+    # Main control thread
+    master_thread_id: 0
+    
+    # Latency measurement thread
+    latency_thread_id: 1
+    
+    # Worker threads per interface pair
+    dual_if:
+      - socket: 0
+        threads: [2, 3, 4, 5, 6, 7, 8, 9]
+  
+  # Memory configuration
+  # memory:
+  #   dp_flows: 1048576  # 1M flows for session testing
+  
+  # C/C++ performance flags
+  # c: 8  # Number of DP cores
