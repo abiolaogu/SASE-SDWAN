@@ -1,0 +1,58 @@
+[package]
+name = "sase-ips"
+version = "0.1.0"
+edition = "2021"
+authors = ["OpenSASE Team"]
+description = "Inline IPS engine with Hyperscan pattern matching"
+license = "Apache-2.0"
+
+[features]
+default = ["hyperscan"]
+hyperscan = ["dep:hyperscan"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full", "sync"] }
+async-trait = "0.1"
+
+# Pattern matching
+hyperscan = { version = "0.3", optional = true }
+aho-corasick = "1.1"
+regex = "1.10"
+
+# Parsing
+nom = "7.1"
+httparse = "1.8"
+
+# Data structures
+dashmap = "5.5"
+lru = "0.12"
+arc-swap = "1.6"
+crossbeam-channel = "0.5"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Crypto (for JA3 fingerprinting)
+sha2 = "0.10"
+md-5 = "0.10"
+hex = "0.4"
+
+# Networking
+ipnetwork = "0.20"
+bytes = "1.5"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+criterion = "0.5"
