@@ -1,0 +1,70 @@
+# Frankfurt PoP Configuration
+
+---
+pop_name: fra1
+pop_region: eu-central
+pop_city: "Frankfurt"
+pop_country: DE
+
+# VPP Interfaces (100G)
+vpp_interfaces:
+  - name: HundredGigabitEthernet0
+    pci: "0000:81:00.0"
+    type: uplink
+    workers: [1, 2, 3, 4]
+    ip4: 203.0.113.20/24
+    
+  - name: TenGigabitEthernet0
+    pci: "0000:18:00.0"
+    type: ixp
+    description: "DE-CIX Port"
+    workers: [5, 6]
+
+vpp_worker_cores: [1, 2, 3, 4, 5, 6, 7, 8]
+
+# WireGuard
+wg_local_ip: 100.64.2.1
+wg_peers:
+  - name: nyc1
+    endpoint: "nyc1.opensase.io:51820"
+    allowed_ips: ["100.64.1.0/24"]
+    
+  - name: lon1
+    endpoint: "lon1.opensase.io:51820"
+    allowed_ips: ["100.64.3.0/24"]
+
+# BGP
+bird_router_id: "203.0.113.20"
+bgp_sessions:
+  - name: dtag
+    neighbor: 80.156.0.1
+    asn: 3320
+    type: transit
+    
+  - name: lumen
+    neighbor: 213.200.64.1
+    asn: 3356
+    type: transit
+
+# IXP - DE-CIX
+ixp_enabled: true
+ixp_sessions:
+  - name: "DE-CIX FRA RS1"
+    neighbor: 80.81.192.157
+    asn: 6695
+    type: routeserver
+    multihop: 2
+
+bilateral_peers:
+  - name: cloudflare
+    neighbor: 80.81.193.13
+    asn: 13335
+    
+  - name: google
+    neighbor: 80.81.192.30
+    asn: 15169
+
+# Kubernetes
+kubernetes_enabled: true
+cilium_cluster_id: 2
+central_monitoring_hub: true

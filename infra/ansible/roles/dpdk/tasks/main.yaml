@@ -1,0 +1,75 @@
+# DPDK Role - Data Plane Development Kit
+# Prerequisite for VPP with hardware acceleration
+
+---
+- name: Install DPDK dependencies
+  apt:
+    name:
+      - build-essential
+      - meson
+      - ninja-build
+      - python3-pyelftools
+      - libnuma-dev
+      - libpcap-dev
+      - linux-headers-{{ ansible_kernel }}
+    state: present
+
+- name: Load required kernel modules
+  modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - vfio
+    - vfio-pci
+    - uio_pci_generic
+
+- name: Persist kernel modules
+  copy:
+    content: |
+      vfio
+      vfio-pci
+      uio_pci_generic
+    dest: /etc/modules-load.d/dpdk.conf
+    mode: '0644'
+
+- name: Enable unsafe IOMMU mode (for non-IOMMU systems)
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/80-dpdk.conf
+    reload: true
+  loop:
+    - { key: 'vm.nr_hugepages', value: '{{ hugepages_1g | default(8) }}' }
+
+- name: Create DPDK tools directory
+  file:
+    path: /opt/dpdk
+    state: directory
+    mode: '0755'
+
+- name: Install dpdk-devbind utility
+  get_url:
+    url: https://raw.githubusercontent.com/DPDK/dpdk/main/usertools/dpdk-devbind.py
+    dest: /opt/dpdk/dpdk-devbind.py
+    mode: '0755'
+
+- name: Create symlink for dpdk-devbind
+  file:
+    src: /opt/dpdk/dpdk-devbind.py
+    dest: /usr/local/bin/dpdk-devbind
+    state: link
+
+- name: Get current NIC bindings
+  command: /opt/dpdk/dpdk-devbind.py --status
+  register: nic_status
+  changed_when: false
+
+- name: Display NIC status
+  debug:
+    msg: "{{ nic_status.stdout_lines }}"
+
+- name: Bind NICs to DPDK driver
+  command: "/opt/dpdk/dpdk-devbind.py --bind=vfio-pci {{ item.pci }}"
+  loop: "{{ vpp_interfaces | selectattr('type', 'equalto', 'uplink') | list }}"
+  when: item.pci not in nic_status.stdout
+  ignore_errors: true

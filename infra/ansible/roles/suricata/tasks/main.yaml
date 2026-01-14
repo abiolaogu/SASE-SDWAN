@@ -1,0 +1,74 @@
+# Suricata Role - IDS/IPS
+# Network intrusion detection and prevention
+
+---
+- name: Add Suricata repository
+  apt_repository:
+    repo: "ppa:oisf/suricata-stable"
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Install Suricata
+  apt:
+    name:
+      - suricata
+      - suricata-update
+    state: present
+
+- name: Create Suricata directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/suricata/rules
+    - /var/log/suricata
+    - /var/lib/suricata/rules
+
+- name: Configure Suricata
+  template:
+    src: suricata.yaml.j2
+    dest: /etc/suricata/suricata.yaml
+    mode: '0644'
+  notify: restart suricata
+
+- name: Configure Suricata for AF_PACKET
+  template:
+    src: suricata-af-packet.yaml.j2
+    dest: /etc/suricata/af-packet.yaml
+    mode: '0644'
+  notify: restart suricata
+
+- name: Update Suricata rules
+  command: suricata-update
+  register: rules_update
+  changed_when: "'Updated' in rules_update.stdout"
+
+- name: Enable ET Open rules
+  command: suricata-update enable-source et/open
+  ignore_errors: true
+
+- name: Create Suricata systemd override
+  copy:
+    content: |
+      [Service]
+      LimitNOFILE=1048576
+      LimitMEMLOCK=infinity
+    dest: /etc/systemd/system/suricata.service.d/override.conf
+    mode: '0644'
+  notify: daemon reload
+
+- name: Enable and start Suricata
+  systemd:
+    name: suricata
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Verify Suricata is running
+  command: suricatasc -c uptime
+  register: suricata_check
+  changed_when: false
+  ignore_errors: true
+  retries: 3
+  delay: 10

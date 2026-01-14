@@ -1,0 +1,51 @@
+# NYC1 PoP Configuration
+
+---
+pop_name: nyc1
+pop_region: us-east
+pop_city: "New York"
+pop_country: US
+
+# VPP Interfaces
+vpp_interfaces:
+  - name: TenGigabitEthernet0
+    pci: "0000:18:00.0"
+    type: uplink
+    workers: [1, 2]
+    ip4: 203.0.113.10/24
+    
+  - name: TenGigabitEthernet1
+    pci: "0000:18:00.1"
+    type: ixp
+    workers: [3]
+
+# WireGuard
+wg_local_ip: 100.64.1.1
+wg_peers:
+  - name: fra1
+    endpoint: "fra1.opensase.io:51820"
+    allowed_ips: ["100.64.2.0/24"]
+    
+  - name: sgp1
+    endpoint: "sgp1.opensase.io:51820"
+    allowed_ips: ["100.64.10.0/24"]
+
+# BGP
+bird_router_id: "203.0.113.10"
+bgp_sessions:
+  - name: cogent
+    neighbor: 154.54.12.1
+    asn: 174
+    type: transit
+
+# IXP
+ixp_enabled: true
+ixp_sessions:
+  - name: "Equinix NYC RS1"
+    neighbor: 198.32.124.1
+    asn: 19754
+    type: routeserver
+
+# Kubernetes
+kubernetes_enabled: true
+cilium_cluster_id: 1

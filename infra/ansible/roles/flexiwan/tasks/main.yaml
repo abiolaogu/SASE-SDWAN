@@ -1,0 +1,63 @@
+# FlexiWAN Role - SD-WAN Agent
+# Integrates with FlexiManage for SD-WAN orchestration
+
+---
+- name: Add FlexiWAN repository
+  apt_key:
+    url: https://deb.flexiwan.com/flexiwan.gpg.key
+    state: present
+
+- name: Add FlexiWAN apt repository
+  apt_repository:
+    repo: "deb https://deb.flexiwan.com/{{ ansible_distribution_release }} {{ ansible_distribution_release }} main"
+    state: present
+    filename: flexiwan
+
+- name: Install FlexiWAN agent
+  apt:
+    name:
+      - flexiwan-router
+    state: present
+    update_cache: true
+
+- name: Create FlexiWAN configuration directory
+  file:
+    path: /etc/flexiwan
+    state: directory
+    mode: '0755'
+
+- name: Generate FlexiWAN configuration
+  template:
+    src: flexiagent.conf.j2
+    dest: /etc/flexiwan/flexiagent.conf
+    mode: '0640'
+  notify: restart flexiwan
+
+- name: Generate device token
+  template:
+    src: device-token.json.j2
+    dest: /etc/flexiwan/token.json
+    mode: '0600'
+  when: flexiwan_token is defined
+
+- name: Enable and start FlexiWAN agent
+  systemd:
+    name: flexiwan-router
+    enabled: true
+    state: started
+
+- name: Wait for FlexiWAN to register
+  wait_for:
+    path: /var/run/flexiwan/flexiwan.sock
+    timeout: 60
+  ignore_errors: true
+
+- name: Check FlexiWAN status
+  command: flexiwan-agent status
+  register: flexiwan_status
+  changed_when: false
+  ignore_errors: true
+
+- name: Display FlexiWAN status
+  debug:
+    msg: "FlexiWAN Agent: {{ 'registered' if flexiwan_status.rc == 0 else 'pending registration' }}"

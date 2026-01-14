@@ -1,0 +1,73 @@
+# Envoy Role - L7 Proxy (SWG/CASB/ZTNA)
+# High-performance edge proxy
+
+---
+- name: Create Envoy user
+  user:
+    name: envoy
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+
+- name: Create Envoy directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: envoy
+    group: envoy
+  loop:
+    - /etc/envoy
+    - /var/log/envoy
+    - /var/lib/envoy
+
+- name: Download Envoy binary
+  get_url:
+    url: "https://github.com/envoyproxy/envoy/releases/download/v{{ envoy_version }}/envoy-{{ envoy_version }}-linux-x86_64"
+    dest: /usr/local/bin/envoy
+    mode: '0755'
+
+- name: Generate Envoy configuration
+  template:
+    src: envoy.yaml.j2
+    dest: /etc/envoy/envoy.yaml
+    mode: '0644'
+  notify: restart envoy
+
+- name: Create Envoy systemd service
+  copy:
+    content: |
+      [Unit]
+      Description=Envoy Proxy
+      After=network.target
+      
+      [Service]
+      User=envoy
+      Group=envoy
+      Type=simple
+      ExecStart=/usr/local/bin/envoy -c /etc/envoy/envoy.yaml
+      Restart=on-failure
+      RestartSec=5
+      LimitNOFILE=1048576
+      
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/envoy.service
+    mode: '0644'
+  notify: daemon reload
+
+- name: Enable and start Envoy
+  systemd:
+    name: envoy
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Verify Envoy is running
+  uri:
+    url: "http://localhost:{{ envoy_admin_port }}/ready"
+    method: GET
+  register: envoy_health
+  until: envoy_health.status == 200
+  retries: 5
+  delay: 5

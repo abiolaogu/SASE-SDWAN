@@ -1,0 +1,95 @@
+# VPP Upgrade Playbook
+# Rolling upgrade with zero downtime
+# Usage: ansible-playbook playbooks/upgrade-vpp.yml -e vpp_target_version=24.10
+
+---
+- name: Pre-upgrade Validation
+  hosts: pop_nodes
+  gather_facts: true
+  become: true
+  
+  tasks:
+    - name: Validate target version
+      assert:
+        that:
+          - vpp_target_version is defined
+        fail_msg: "vpp_target_version is required"
+    
+    - name: Check current VPP version
+      command: vppctl show version
+      register: current_version
+      changed_when: false
+    
+    - name: Display upgrade plan
+      debug:
+        msg: |
+          Current: {{ current_version.stdout_lines[0] }}
+          Target: {{ vpp_target_version }}
+
+---
+- name: Rolling VPP Upgrade
+  hosts: pop_nodes
+  become: true
+  serial: 1  # One node at a time
+  max_fail_percentage: 0
+  
+  tasks:
+    - name: Drain traffic from node
+      command: birdc disable all
+      ignore_errors: true
+    
+    - name: Wait for sessions to drain
+      pause:
+        seconds: 30
+    
+    - name: Stop VPP service
+      systemd:
+        name: vpp
+        state: stopped
+    
+    - name: Backup current config
+      copy:
+        src: /etc/vpp/
+        dest: /etc/vpp.backup.{{ ansible_date_time.epoch }}/
+        remote_src: true
+    
+    - name: Upgrade VPP packages
+      apt:
+        name:
+          - vpp={{ vpp_target_version }}*
+          - vpp-plugin-core={{ vpp_target_version }}*
+          - vpp-plugin-dpdk={{ vpp_target_version }}*
+        state: present
+        update_cache: true
+      register: upgrade_result
+    
+    - name: Start VPP service
+      systemd:
+        name: vpp
+        state: started
+    
+    - name: Wait for VPP to be ready
+      wait_for:
+        path: /run/vpp/cli.sock
+        timeout: 60
+    
+    - name: Verify VPP version
+      command: vppctl show version
+      register: new_version
+      changed_when: false
+    
+    - name: Re-enable BGP
+      command: birdc enable all
+    
+    - name: Wait for BGP to converge
+      pause:
+        seconds: 60
+    
+    - name: Verify interfaces are up
+      command: vppctl show interface
+      register: interfaces
+      failed_when: "'down' in interfaces.stdout"
+    
+    - name: Display upgrade result
+      debug:
+        msg: "{{ inventory_hostname }}: {{ new_version.stdout_lines[0] }}"

@@ -1,0 +1,98 @@
+# Key Rotation Playbook
+# Rotate WireGuard and BGP keys
+# Usage: ansible-playbook playbooks/rotate-keys.yml -e key_type=wireguard
+
+---
+- name: Rotate WireGuard Keys
+  hosts: pop_nodes
+  become: true
+  serial: 1
+  
+  vars:
+    key_type: "{{ key_type | default('all') }}"
+  
+  tasks:
+    - name: Generate new WireGuard keys
+      when: key_type in ['wireguard', 'all']
+      block:
+        - name: Backup current keys
+          copy:
+            src: /etc/wireguard/privatekey
+            dest: "/etc/wireguard/privatekey.backup.{{ ansible_date_time.epoch }}"
+            remote_src: true
+        
+        - name: Generate new private key
+          shell: wg genkey > /etc/wireguard/privatekey.new
+          args:
+            creates: /etc/wireguard/privatekey.new
+        
+        - name: Generate new public key
+          shell: cat /etc/wireguard/privatekey.new | wg pubkey > /etc/wireguard/publickey.new
+        
+        - name: Read new public key
+          slurp:
+            src: /etc/wireguard/publickey.new
+          register: new_pubkey
+        
+        - name: Display new public key
+          debug:
+            msg: |
+              Node: {{ inventory_hostname }}
+              New Public Key: {{ new_pubkey.content | b64decode | trim }}
+              IMPORTANT: Update peer configurations before activating!
+        
+        - name: Prompt for confirmation
+          pause:
+            prompt: "Press ENTER after updating peer configs, or Ctrl+C to abort"
+        
+        - name: Activate new keys
+          shell: |
+            mv /etc/wireguard/privatekey.new /etc/wireguard/privatekey
+            mv /etc/wireguard/publickey.new /etc/wireguard/publickey
+            chmod 600 /etc/wireguard/privatekey
+        
+        - name: Restart WireGuard
+          systemd:
+            name: wg-quick@wg-mesh
+            state: restarted
+          when: not wg_use_vpp | default(true)
+        
+        - name: Reconfigure VPP WireGuard
+          command: vppctl wireguard key regenerate
+          when: wg_use_vpp | default(true)
+          ignore_errors: true
+
+---
+- name: Rotate BGP MD5 Keys
+  hosts: pop_nodes
+  become: true
+  serial: 1
+  
+  tasks:
+    - name: Generate new BGP password
+      when: key_type in ['bgp', 'all']
+      block:
+        - name: Generate random password
+          set_fact:
+            new_bgp_password: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters,digits') }}"
+        
+        - name: Display new password (for peer coordination)
+          debug:
+            msg: |
+              Node: {{ inventory_hostname }}
+              New BGP Password: {{ new_bgp_password }}
+              IMPORTANT: Coordinate with peer before applying!
+        
+        - name: Prompt for confirmation
+          pause:
+            prompt: "Press ENTER after coordinating with peer"
+        
+        - name: Update BIRD configuration
+          lineinfile:
+            path: /etc/bird/bird.conf
+            regexp: 'password ".*";'
+            line: '    password "{{ new_bgp_password }}";'
+            backup: true
+        
+        - name: Reload BIRD
+          command: birdc configure

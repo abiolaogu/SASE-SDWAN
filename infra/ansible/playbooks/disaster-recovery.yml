@@ -1,0 +1,176 @@
+# Disaster Recovery Playbook
+# Emergency procedures for PoP recovery
+# Usage: ansible-playbook playbooks/disaster-recovery.yml -e action=failover -e source_pop=nyc1 -e target_pop=ash1
+
+---
+- name: Disaster Recovery - Pre-checks
+  hosts: localhost
+  gather_facts: false
+  
+  vars:
+    action: "{{ action | default('status') }}"
+    
+  tasks:
+    - name: Validate action
+      assert:
+        that:
+          - action in ['status', 'failover', 'failback', 'rebuild']
+        fail_msg: "Invalid action. Use: status, failover, failback, rebuild"
+    
+    - name: Validate failover parameters
+      assert:
+        that:
+          - source_pop is defined
+          - target_pop is defined
+        fail_msg: "source_pop and target_pop required for failover"
+      when: action == 'failover'
+
+---
+- name: DR Status Check
+  hosts: pop_nodes
+  gather_facts: true
+  become: true
+  
+  tasks:
+    - name: Check VPP status
+      command: vppctl show version
+      register: vpp_status
+      ignore_errors: true
+      changed_when: false
+    
+    - name: Check BIRD status
+      command: birdc show status
+      register: bird_status
+      ignore_errors: true
+      changed_when: false
+    
+    - name: Check BGP sessions
+      command: birdc show protocols
+      register: bgp_sessions
+      ignore_errors: true
+      changed_when: false
+    
+    - name: Display status
+      debug:
+        msg: |
+          === {{ inventory_hostname }} ===
+          VPP: {{ 'OK' if vpp_status.rc == 0 else 'FAILED' }}
+          BIRD: {{ 'OK' if bird_status.rc == 0 else 'FAILED' }}
+          BGP Sessions: {{ bgp_sessions.stdout_lines | length - 2 }}
+      when: action == 'status'
+
+---
+- name: PoP Failover
+  hosts: "pop_{{ source_pop }}"
+  become: true
+  serial: "100%"
+  
+  tasks:
+    - name: Announce BGP withdrawal
+      when: action == 'failover'
+      block:
+        - name: Lower local preference
+          command: birdc eval 'bgp_local_pref = 10'
+          ignore_errors: true
+        
+        - name: Wait for routes to drain
+          pause:
+            seconds: 60
+        
+        - name: Disable BGP sessions
+          command: birdc disable all
+        
+        - name: Stop VPP
+          systemd:
+            name: vpp
+            state: stopped
+        
+        - name: Mark node as failed over
+          file:
+            path: /etc/opensase/failover.flag
+            state: touch
+
+---
+- name: Activate Standby PoP
+  hosts: "pop_{{ target_pop }}"
+  become: true
+  
+  tasks:
+    - name: Activate standby
+      when: action == 'failover'
+      block:
+        - name: Increase local preference
+          command: birdc eval 'bgp_local_pref = 250'
+          ignore_errors: true
+        
+        - name: Announce additional prefixes
+          command: birdc configure
+        
+        - name: Log failover event
+          lineinfile:
+            path: /var/log/opensase/dr.log
+            line: "{{ ansible_date_time.iso8601 }} FAILOVER from {{ source_pop }} to {{ target_pop }}"
+            create: true
+
+---
+- name: PoP Rebuild
+  hosts: "pop_{{ source_pop }}"
+  become: true
+  
+  tasks:
+    - name: Full rebuild
+      when: action == 'rebuild'
+      block:
+        - name: Remove failover flag
+          file:
+            path: /etc/opensase/failover.flag
+            state: absent
+        
+        - name: Reinstall VPP
+          include_role:
+            name: vpp
+        
+        - name: Reinstall BIRD
+          include_role:
+            name: bird
+        
+        - name: Reinstall WireGuard
+          include_role:
+            name: wireguard
+        
+        - name: Run full validation
+          include_role:
+            name: health-check
+
+---
+- name: Failback to Primary
+  hosts: "pop_{{ source_pop }}"
+  become: true
+  
+  tasks:
+    - name: Failback
+      when: action == 'failback'
+      block:
+        - name: Start VPP
+          systemd:
+            name: vpp
+            state: started
+        
+        - name: Enable BGP sessions
+          command: birdc enable all
+        
+        - name: Restore local preference
+          command: birdc configure
+        
+        - name: Wait for convergence
+          pause:
+            seconds: 120
+        
+        - name: Remove failover flag
+          file:
+            path: /etc/opensase/failover.flag
+            state: absent
+        
+        - name: Notify standby to reduce preference
+          delegate_to: "{{ groups['pop_' + target_pop][0] }}"
+          command: birdc configure

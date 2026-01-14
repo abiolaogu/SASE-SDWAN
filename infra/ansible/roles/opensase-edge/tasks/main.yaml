@@ -1,0 +1,95 @@
+# OpenSASE Edge Role
+# Main edge daemon for SASE functionality
+
+---
+- name: Create OpenSASE user
+  user:
+    name: opensase
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+
+- name: Create OpenSASE directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: opensase
+    group: opensase
+  loop:
+    - /opt/opensase
+    - /opt/opensase/bin
+    - /opt/opensase/config
+    - /opt/opensase/data
+    - /var/log/opensase
+    - /var/lib/opensase
+
+- name: Download OpenSASE Edge binary
+  get_url:
+    url: "https://releases.opensase.io/edge/{{ opensase_version }}/opensase-edge-linux-amd64"
+    dest: /opt/opensase/bin/opensase-edge
+    mode: '0755'
+    owner: opensase
+    group: opensase
+
+- name: Generate Edge configuration
+  template:
+    src: edge-config.yaml.j2
+    dest: /opt/opensase/config/edge.yaml
+    mode: '0644'
+    owner: opensase
+    group: opensase
+  notify: restart opensase-edge
+
+- name: Create OpenSASE Edge systemd service
+  copy:
+    content: |
+      [Unit]
+      Description=OpenSASE Edge Daemon
+      After=network.target vpp.service
+      Wants=vpp.service
+      
+      [Service]
+      User=opensase
+      Group=opensase
+      Type=simple
+      ExecStart=/opt/opensase/bin/opensase-edge \
+        --config /opt/opensase/config/edge.yaml
+      Restart=on-failure
+      RestartSec=5
+      LimitNOFILE=1048576
+      
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/opensase-edge.service
+    mode: '0644'
+  notify: daemon reload
+
+- name: Enable and start OpenSASE Edge
+  systemd:
+    name: opensase-edge
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for Edge to be ready
+  wait_for:
+    port: 8080
+    host: 127.0.0.1
+    timeout: 60
+
+- name: Verify Edge health
+  uri:
+    url: http://127.0.0.1:8080/health
+    method: GET
+  register: edge_health
+  until: edge_health.status == 200
+  retries: 5
+  delay: 5
+
+- name: Display Edge status
+  debug:
+    msg: |
+      OpenSASE Edge: Running
+      Version: {{ opensase_version }}
+      API: http://{{ ansible_default_ipv4.address }}:8080
