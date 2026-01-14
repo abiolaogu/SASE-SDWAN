@@ -1,0 +1,83 @@
+# Security Role - Firewall and Suricata IDS
+# Estimated time: 2 minutes
+
+---
+- name: Install security packages
+  apt:
+    name:
+      - iptables
+      - iptables-persistent
+      - suricata
+      - suricata-update
+      - fail2ban
+    state: present
+
+- name: Create security directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/suricata/rules
+    - /var/log/suricata
+    - /var/lib/suricata
+
+- name: Configure Suricata
+  template:
+    src: suricata.yaml.j2
+    dest: /etc/suricata/suricata.yaml
+    mode: '0644'
+  notify: restart suricata
+
+- name: Update Suricata rules
+  command: suricata-update
+  register: suricata_update
+  changed_when: "'Updated' in suricata_update.stdout"
+
+- name: Generate iptables rules
+  template:
+    src: iptables.rules.j2
+    dest: /etc/iptables/rules.v4
+    mode: '0600'
+  notify: restore iptables
+
+- name: Generate ip6tables rules
+  template:
+    src: ip6tables.rules.j2
+    dest: /etc/iptables/rules.v6
+    mode: '0600'
+  notify: restore ip6tables
+
+- name: Configure fail2ban
+  template:
+    src: jail.local.j2
+    dest: /etc/fail2ban/jail.local
+    mode: '0644'
+  notify: restart fail2ban
+
+- name: Enable and start security services
+  systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - suricata
+    - fail2ban
+
+- name: Wait for Suricata to be ready
+  wait_for:
+    path: /var/run/suricata.pid
+    timeout: 60
+
+- name: Verify Suricata is running
+  command: suricatasc -c uptime
+  register: suricata_status
+  changed_when: false
+  ignore_errors: true
+
+- name: Display security status
+  debug:
+    msg: |
+      Suricata: {{ 'running' if suricata_status.rc == 0 else 'starting' }}
+      Fail2ban: enabled
+      Firewall: configured

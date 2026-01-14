@@ -1,0 +1,161 @@
+# OpenSASE PoP Deployment - Master Playbook
+# Deploy complete PoP in <15 minutes
+#
+# Usage:
+#   ansible-playbook -i inventory/production site.yaml -e pop_name=nyc1
+#
+# Tags:
+#   - common: Base system setup
+#   - kernel: Performance tuning
+#   - vpp: VPP data plane
+#   - bird: BGP routing daemon
+#   - wireguard: WireGuard mesh
+#   - security: Suricata IDS
+#   - monitoring: Prometheus exporters
+#   - validate: Health checks
+
+---
+- name: OpenSASE PoP Deployment
+  hosts: pop_nodes
+  become: true
+  gather_facts: true
+  
+  vars_files:
+    - vars/common.yaml
+    - "vars/{{ pop_name }}.yaml"
+  
+  pre_tasks:
+    - name: Record deployment start time
+      set_fact:
+        deployment_start: "{{ ansible_date_time.epoch }}"
+      tags: always
+    
+    - name: Validate required variables
+      assert:
+        that:
+          - pop_name is defined
+          - pop_region is defined
+          - vpp_interfaces is defined
+        fail_msg: "Required variables not defined"
+      tags: always
+    
+    - name: Display deployment info
+      debug:
+        msg: |
+          ==========================================
+          OpenSASE PoP Deployment
+          ==========================================
+          PoP Name: {{ pop_name }}
+          Region: {{ pop_region }}
+          Hostname: {{ ansible_hostname }}
+          ==========================================
+      tags: always
+
+  roles:
+    # Phase 1: Base System (2 min)
+    - role: common
+      tags: [common, base]
+    
+    # Phase 2: Kernel Tuning (1 min)
+    - role: kernel
+      tags: [kernel, tuning]
+    
+    # Phase 3: VPP Data Plane (4 min)
+    - role: vpp
+      tags: [vpp, dataplane]
+    
+    # Phase 4: BGP Routing (1 min)
+    - role: bird
+      tags: [bird, bgp, routing]
+    
+    # Phase 5: WireGuard Mesh (1 min)
+    - role: wireguard
+      tags: [wireguard, mesh]
+    
+    # Phase 6: Security (2 min)
+    - role: security
+      tags: [security, suricata]
+    
+    # Phase 7: Monitoring (1 min)
+    - role: monitoring
+      tags: [monitoring, prometheus]
+
+  post_tasks:
+    - name: Calculate deployment duration
+      set_fact:
+        deployment_duration: "{{ (ansible_date_time.epoch | int) - (deployment_start | int) }}"
+      tags: always
+    
+    - name: Display deployment summary
+      debug:
+        msg: |
+          ==========================================
+          Deployment Complete!
+          ==========================================
+          Duration: {{ deployment_duration }} seconds
+          PoP: {{ pop_name }}
+          VPP Status: {{ vpp_status | default('configured') }}
+          BIRD Status: {{ bird_status | default('configured') }}
+          ==========================================
+      tags: always
+
+  handlers:
+    - name: restart vpp
+      systemd:
+        name: vpp
+        state: restarted
+        daemon_reload: true
+    
+    - name: restart bird
+      systemd:
+        name: bird
+        state: restarted
+    
+    - name: restart suricata
+      systemd:
+        name: suricata
+        state: restarted
+    
+    - name: reload sysctl
+      command: sysctl --system
+
+---
+# Validation playbook (run after deployment)
+- name: Validate PoP Deployment
+  hosts: pop_nodes
+  become: true
+  gather_facts: false
+  tags: [validate, never]
+  
+  tasks:
+    - name: Check VPP service
+      systemd:
+        name: vpp
+        state: started
+      check_mode: true
+      register: vpp_check
+      failed_when: vpp_check.changed
+    
+    - name: Check BIRD service
+      systemd:
+        name: bird
+        state: started
+      check_mode: true
+      register: bird_check
+      failed_when: bird_check.changed
+    
+    - name: Verify VPP interfaces
+      command: vppctl show interface
+      register: vpp_interfaces_check
+      changed_when: false
+    
+    - name: Verify BGP sessions
+      command: birdc show protocols
+      register: bird_protocols
+      changed_when: false
+    
+    - name: Display validation results
+      debug:
+        msg: |
+          VPP Interfaces: {{ vpp_interfaces_check.stdout_lines | length }}
+          BGP Protocols: {{ bird_protocols.stdout_lines | length }}

@@ -1,0 +1,92 @@
+# BIRD Role - BGP Routing Daemon
+# Estimated time: 1 minute
+
+---
+- name: Add BIRD repository
+  apt_repository:
+    repo: ppa:cz.nic-labs/bird
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Install BIRD
+  apt:
+    name:
+      - bird2
+    state: present
+  notify: restart bird
+
+- name: Create BIRD directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: bird
+    group: bird
+  loop:
+    - /etc/bird
+    - /etc/bird/ixp
+    - /etc/bird/customers
+    - /var/log/bird
+
+- name: Generate main BIRD configuration
+  template:
+    src: bird.conf.j2
+    dest: /etc/bird/bird.conf
+    mode: '0644'
+    owner: bird
+    group: bird
+  notify: restart bird
+
+- name: Generate RPKI configuration
+  template:
+    src: rpki.conf.j2
+    dest: /etc/bird/rpki.conf
+    mode: '0644'
+  notify: restart bird
+
+- name: Generate IXP configurations
+  template:
+    src: ixp.conf.j2
+    dest: "/etc/bird/ixp/{{ item.name | lower | replace(' ', '_') }}.conf"
+    mode: '0644'
+  loop: "{{ ixp_sessions | default([]) }}"
+  notify: restart bird
+
+- name: Validate BIRD configuration
+  command: bird -p -c /etc/bird/bird.conf
+  register: bird_check
+  changed_when: false
+  failed_when: bird_check.rc != 0
+
+- name: Enable and start BIRD
+  systemd:
+    name: bird
+    enabled: true
+    state: started
+
+- name: Wait for BIRD to be ready
+  wait_for:
+    path: /run/bird/bird.ctl
+    timeout: 30
+
+- name: Verify BIRD is running
+  command: birdc show status
+  register: bird_status_check
+  changed_when: false
+  retries: 3
+  delay: 5
+
+- name: Check BGP protocols
+  command: birdc show protocols
+  register: bird_protocols
+  changed_when: false
+
+- name: Display BIRD status
+  debug:
+    msg: |
+      BIRD Status: {{ bird_status_check.stdout_lines[0] | default('running') }}
+      Protocols: {{ bird_protocols.stdout_lines | length - 2 }}
+
+- name: Register BIRD status
+  set_fact:
+    bird_status: "running"

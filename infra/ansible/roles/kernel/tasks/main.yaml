@@ -1,0 +1,129 @@
+# Kernel Role - Performance Tuning for 100 Gbps
+# Estimated time: 1 minute
+
+---
+- name: Install required kernel packages
+  apt:
+    name:
+      - linux-headers-{{ ansible_kernel }}
+      - linux-tools-{{ ansible_kernel }}
+      - linux-cloud-tools-{{ ansible_kernel }}
+      - numactl
+      - cpufrequtils
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Configure hugepages in kernel parameters
+  template:
+    src: grub.j2
+    dest: /etc/default/grub.d/50-opensase.cfg
+    mode: '0644'
+  register: grub_changed
+  notify: update grub
+
+- name: Create hugepages mount point
+  file:
+    path: /dev/hugepages
+    state: directory
+    mode: '0755'
+
+- name: Mount hugepages
+  mount:
+    path: /dev/hugepages
+    src: hugetlbfs
+    fstype: hugetlbfs
+    opts: "defaults,pagesize=1G"
+    state: mounted
+
+- name: Configure 1G hugepages
+  sysctl:
+    name: vm.nr_hugepages
+    value: "{{ hugepages_1g_count }}"
+    sysctl_file: /etc/sysctl.d/80-hugepages.conf
+    reload: true
+
+- name: Disable transparent hugepages
+  shell: |
+    echo never > /sys/kernel/mm/transparent_hugepage/enabled
+    echo never > /sys/kernel/mm/transparent_hugepage/defrag
+  changed_when: false
+
+- name: Create THP disable service
+  copy:
+    content: |
+      [Unit]
+      Description=Disable Transparent Huge Pages
+      DefaultDependencies=no
+      After=sysinit.target local-fs.target
+      
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/enabled'
+      ExecStart=/bin/sh -c 'echo never > /sys/kernel/mm/transparent_hugepage/defrag'
+      
+      [Install]
+      WantedBy=basic.target
+    dest: /etc/systemd/system/disable-thp.service
+    mode: '0644'
+  notify: enable thp service
+
+- name: Set CPU governor to performance
+  shell: |
+    for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+      echo performance > $cpu
+    done
+  changed_when: false
+  ignore_errors: true
+
+- name: Configure CPU frequency governor
+  copy:
+    content: 'GOVERNOR="performance"'
+    dest: /etc/default/cpufrequtils
+    mode: '0644'
+
+- name: Disable CPU power saving states
+  shell: |
+    for cpu in /sys/devices/system/cpu/cpu*/cpuidle/state*/disable; do
+      echo 1 > $cpu 2>/dev/null || true
+    done
+  changed_when: false
+  ignore_errors: true
+
+- name: Configure NUMA settings
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/80-numa.conf
+    reload: true
+  loop:
+    - { key: 'vm.zone_reclaim_mode', value: '0' }
+    - { key: 'kernel.numa_balancing', value: '0' }
+
+- name: Install irqbalance
+  apt:
+    name: irqbalance
+    state: present
+
+- name: Configure irqbalance to exclude DPDK cores
+  template:
+    src: irqbalance.j2
+    dest: /etc/default/irqbalance
+    mode: '0644'
+  notify: restart irqbalance
+
+- name: Bind NIC drivers to DPDK (if configured)
+  shell: |
+    modprobe vfio-pci
+    echo 1 > /sys/module/vfio/parameters/enable_unsafe_noiommu_mode
+  when: vpp_use_dpdk | default(true)
+  changed_when: false
+  ignore_errors: true
+
+- name: Load vfio-pci module at boot
+  copy:
+    content: |
+      vfio-pci
+      uio
+      igb_uio
+    dest: /etc/modules-load.d/dpdk.conf
+    mode: '0644'

@@ -1,0 +1,174 @@
+# OpenSASE Common Variables
+# Shared across all PoPs
+
+---
+# =============================================================================
+# Organization
+# =============================================================================
+
+opensase_org: "OpenSASE"
+opensase_domain: "opensase.io"
+opensase_asn: 65100
+
+# =============================================================================
+# Networking
+# =============================================================================
+
+# Management network
+mgmt_network: "10.0.0.0/8"
+
+# WireGuard mesh network
+wg_mesh_network: "100.64.0.0/16"
+wg_mesh_port: 51820
+
+# Pod network (for K8s)
+pod_network: "10.244.0.0/16"
+
+# BGP
+bgp_router_id_prefix: "203.0.113"
+bgp_local_pref_default: 100
+
+# =============================================================================
+# VPP Configuration
+# =============================================================================
+
+vpp_version: "24.06"
+vpp_dpdk_version: "23.11"
+
+# Default interface settings
+vpp_rx_queues: 4
+vpp_tx_queues: 4
+vpp_rx_ring_size: 4096
+vpp_tx_ring_size: 4096
+
+# Worker threads
+vpp_main_core: 0
+vpp_worker_cores: [1, 2, 3]
+
+# Hugepages
+hugepages_1g_count: 8
+hugepages_2m_count: 0
+
+# =============================================================================
+# BIRD Configuration
+# =============================================================================
+
+bird_version: "2.14"
+
+# Bogon prefixes (auto-reject)
+bird_bogon_v4:
+  - "0.0.0.0/8"
+  - "10.0.0.0/8"
+  - "127.0.0.0/8"
+  - "169.254.0.0/16"
+  - "172.16.0.0/12"
+  - "192.0.2.0/24"
+  - "192.168.0.0/16"
+  - "198.18.0.0/15"
+  - "198.51.100.0/24"
+  - "203.0.113.0/24"
+  - "224.0.0.0/4"
+  - "240.0.0.0/4"
+
+# =============================================================================
+# Security
+# =============================================================================
+
+suricata_version: "7.0"
+suricata_home_net: "10.0.0.0/8"
+
+# Firewall
+firewall_allowed_ports:
+  - { port: 22, proto: tcp, comment: "SSH" }
+  - { port: 443, proto: tcp, comment: "HTTPS" }
+  - { port: 179, proto: tcp, comment: "BGP" }
+  - { port: 51820, proto: udp, comment: "WireGuard" }
+  - { port: 4789, proto: udp, comment: "VXLAN" }
+  - { port: 9100, proto: tcp, comment: "Node Exporter" }
+  - { port: 9482, proto: tcp, comment: "VPP Exporter" }
+
+# =============================================================================
+# Monitoring
+# =============================================================================
+
+prometheus_version: "2.48"
+node_exporter_version: "1.7"
+grafana_version: "10.2"
+
+prometheus_retention: "30d"
+prometheus_scrape_interval: "15s"
+
+# Alerting
+alertmanager_slack_webhook: "{{ vault_slack_webhook }}"
+alertmanager_pagerduty_key: "{{ vault_pagerduty_key }}"
+
+# =============================================================================
+# DNS/NTP
+# =============================================================================
+
+dns_servers:
+  - 1.1.1.1
+  - 8.8.8.8
+
+ntp_servers:
+  - time.cloudflare.com
+  - time.google.com
+
+# =============================================================================
+# System Tuning
+# =============================================================================
+
+sysctl_settings:
+  # Network performance
+  net.core.somaxconn: 65535
+  net.core.netdev_max_backlog: 250000
+  net.core.rmem_max: 16777216
+  net.core.wmem_max: 16777216
+  net.core.rmem_default: 16777216
+  net.core.wmem_default: 16777216
+  net.core.optmem_max: 40960
+  net.ipv4.tcp_rmem: "4096 87380 16777216"
+  net.ipv4.tcp_wmem: "4096 65536 16777216"
+  
+  # TCP optimization
+  net.ipv4.tcp_congestion_control: bbr
+  net.core.default_qdisc: fq
+  net.ipv4.tcp_fastopen: 3
+  net.ipv4.tcp_mtu_probing: 1
+  net.ipv4.tcp_slow_start_after_idle: 0
+  
+  # Connection tracking
+  net.netfilter.nf_conntrack_max: 2097152
+  net.netfilter.nf_conntrack_tcp_timeout_established: 86400
+  
+  # IP forwarding
+  net.ipv4.ip_forward: 1
+  net.ipv6.conf.all.forwarding: 1
+  
+  # File descriptors
+  fs.file-max: 2097152
+  fs.inotify.max_user_watches: 1048576
+
+# =============================================================================
+# Packages
+# =============================================================================
+
+common_packages:
+  - vim
+  - curl
+  - wget
+  - htop
+  - iotop
+  - tmux
+  - git
+  - jq
+  - unzip
+  - bridge-utils
+  - tcpdump
+  - iperf3
+  - mtr
+  - dnsutils
+  - net-tools
+  - numactl
+  - pciutils
+  - linux-tools-generic

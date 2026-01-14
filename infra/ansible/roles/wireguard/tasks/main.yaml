@@ -1,0 +1,74 @@
+# WireGuard Role - Mesh Networking
+# Estimated time: 1 minute
+
+---
+- name: Install WireGuard tools
+  apt:
+    name:
+      - wireguard-tools
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Create WireGuard directory
+  file:
+    path: /etc/wireguard
+    state: directory
+    mode: '0700'
+
+- name: Generate WireGuard keys (if not provided)
+  shell: |
+    if [ ! -f /etc/wireguard/privatekey ]; then
+      wg genkey > /etc/wireguard/privatekey
+      chmod 600 /etc/wireguard/privatekey
+      cat /etc/wireguard/privatekey | wg pubkey > /etc/wireguard/publickey
+    fi
+  args:
+    creates: /etc/wireguard/privatekey
+
+- name: Read private key
+  slurp:
+    src: /etc/wireguard/privatekey
+  register: wg_private_key_file
+
+- name: Read public key
+  slurp:
+    src: /etc/wireguard/publickey
+  register: wg_public_key_file
+
+- name: Set WireGuard key facts
+  set_fact:
+    wg_private_key: "{{ wg_private_key_file.content | b64decode | trim }}"
+    wg_public_key: "{{ wg_public_key_file.content | b64decode | trim }}"
+
+- name: Generate WireGuard mesh configuration
+  template:
+    src: wg-mesh.conf.j2
+    dest: /etc/wireguard/wg-mesh.conf
+    mode: '0600'
+  notify: restart wireguard
+  when: not wg_use_vpp | default(true)
+
+- name: Configure WireGuard in VPP (if using VPP)
+  template:
+    src: vpp-wireguard.conf.j2
+    dest: /etc/vpp/wireguard.conf
+    mode: '0644'
+  when: wg_use_vpp | default(true)
+  notify: restart vpp
+
+- name: Enable WireGuard interface (non-VPP)
+  systemd:
+    name: "wg-quick@wg-mesh"
+    enabled: true
+    state: started
+  when: not wg_use_vpp | default(false)
+
+- name: Generate peer list for mesh
+  template:
+    src: peers.yaml.j2
+    dest: /etc/opensase/mesh-peers.yaml
+    mode: '0644'
+
+- name: Display WireGuard public key
+  debug:
+    msg: "WireGuard Public Key: {{ wg_public_key }}"

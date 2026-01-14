@@ -1,0 +1,141 @@
+# Monitoring Role - Prometheus Exporters
+# Estimated time: 1 minute
+
+---
+- name: Create prometheus user
+  user:
+    name: prometheus
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+
+- name: Create monitoring directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+    owner: prometheus
+    group: prometheus
+  loop:
+    - /opt/prometheus
+    - /etc/prometheus
+    - /var/lib/prometheus
+
+- name: Download Node Exporter
+  get_url:
+    url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+    dest: /tmp/node_exporter.tar.gz
+    mode: '0644'
+
+- name: Extract Node Exporter
+  unarchive:
+    src: /tmp/node_exporter.tar.gz
+    dest: /opt/prometheus
+    remote_src: true
+    owner: prometheus
+    group: prometheus
+
+- name: Create Node Exporter symlink
+  file:
+    src: "/opt/prometheus/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+    dest: /usr/local/bin/node_exporter
+    state: link
+
+- name: Create Node Exporter systemd service
+  copy:
+    content: |
+      [Unit]
+      Description=Node Exporter
+      Wants=network-online.target
+      After=network-online.target
+      
+      [Service]
+      User=prometheus
+      Group=prometheus
+      Type=simple
+      ExecStart=/usr/local/bin/node_exporter \
+        --collector.textfile.directory=/var/lib/prometheus/textfile \
+        --collector.systemd \
+        --collector.processes
+      Restart=on-failure
+      
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/node_exporter.service
+    mode: '0644'
+  notify: restart node_exporter
+
+- name: Create textfile collector directory
+  file:
+    path: /var/lib/prometheus/textfile
+    state: directory
+    mode: '0755'
+    owner: prometheus
+    group: prometheus
+
+- name: Create VPP Exporter
+  template:
+    src: vpp_exporter.py.j2
+    dest: /opt/prometheus/vpp_exporter.py
+    mode: '0755'
+
+- name: Create VPP Exporter systemd service
+  copy:
+    content: |
+      [Unit]
+      Description=VPP Prometheus Exporter
+      After=vpp.service
+      Requires=vpp.service
+      
+      [Service]
+      Type=simple
+      ExecStart=/usr/bin/python3 /opt/prometheus/vpp_exporter.py
+      Restart=on-failure
+      RestartSec=5
+      
+      [Install]
+      WantedBy=multi-user.target
+    dest: /etc/systemd/system/vpp_exporter.service
+    mode: '0644'
+  notify: restart vpp_exporter
+
+- name: Enable and start monitoring services
+  systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  loop:
+    - node_exporter
+    - vpp_exporter
+
+- name: Create BIRD Exporter
+  template:
+    src: bird_exporter.sh.j2
+    dest: /opt/prometheus/bird_exporter.sh
+    mode: '0755'
+
+- name: Schedule BIRD metrics collection
+  cron:
+    name: "BIRD metrics"
+    minute: "*"
+    job: "/opt/prometheus/bird_exporter.sh > /var/lib/prometheus/textfile/bird.prom"
+    user: prometheus
+
+- name: Verify exporters are running
+  uri:
+    url: "http://localhost:{{ item.port }}/metrics"
+    method: GET
+    return_content: false
+  loop:
+    - { name: 'node_exporter', port: 9100 }
+    - { name: 'vpp_exporter', port: 9482 }
+  register: exporter_check
+  ignore_errors: true
+  changed_when: false
+
+- name: Display monitoring status
+  debug:
+    msg: |
+      Node Exporter: http://{{ ansible_default_ipv4.address }}:9100/metrics
+      VPP Exporter: http://{{ ansible_default_ipv4.address }}:9482/metrics

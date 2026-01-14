@@ -1,0 +1,104 @@
+# Common Role - Base System Setup
+# Estimated time: 2 minutes
+
+---
+- name: Set hostname
+  hostname:
+    name: "{{ pop_name }}-{{ inventory_hostname_short }}"
+
+- name: Update /etc/hosts
+  lineinfile:
+    path: /etc/hosts
+    line: "{{ ansible_default_ipv4.address }} {{ ansible_hostname }} {{ ansible_hostname }}.{{ opensase_domain }}"
+    state: present
+
+- name: Configure timezone
+  timezone:
+    name: UTC
+
+- name: Configure DNS resolvers
+  template:
+    src: resolv.conf.j2
+    dest: /etc/resolv.conf
+    mode: '0644'
+
+- name: Configure NTP
+  template:
+    src: chrony.conf.j2
+    dest: /etc/chrony/chrony.conf
+    mode: '0644'
+  notify: restart chrony
+
+- name: Update apt cache
+  apt:
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_os_family == 'Debian'
+
+- name: Install common packages
+  apt:
+    name: "{{ common_packages }}"
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Install Python packages
+  pip:
+    name:
+      - requests
+      - pyyaml
+      - prometheus-client
+    state: present
+
+- name: Create OpenSASE directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /etc/opensase
+    - /var/log/opensase
+    - /opt/opensase
+    - /opt/opensase/bin
+    - /opt/opensase/config
+
+- name: Configure file limits
+  template:
+    src: limits.conf.j2
+    dest: /etc/security/limits.d/90-opensase.conf
+    mode: '0644'
+
+- name: Configure sysctl
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/90-opensase.conf
+    reload: true
+  loop: "{{ sysctl_settings | dict2items }}"
+
+- name: Enable and start essential services
+  systemd:
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  loop:
+    - chrony
+    - ssh
+
+- name: Configure SSH hardening
+  template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    mode: '0600'
+    validate: 'sshd -t -f %s'
+  notify: restart sshd
+
+- name: Generate machine ID
+  command: cat /etc/machine-id
+  register: machine_id
+  changed_when: false
+
+- name: Save node configuration
+  template:
+    src: node-config.yaml.j2
+    dest: /etc/opensase/node.yaml
+    mode: '0644'
