@@ -65,6 +65,9 @@ pub mod sandbox;
 pub mod bec;
 pub mod dmarc;
 pub mod dlp;
+pub mod urlrewrite;
+pub mod outbound;
+pub mod quarantine;
 
 // =============================================================================
 // Core Types
