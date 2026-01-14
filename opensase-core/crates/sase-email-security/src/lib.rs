@@ -68,6 +68,11 @@ pub mod dlp;
 pub mod urlrewrite;
 pub mod outbound;
 pub mod quarantine;
+pub mod smtp;
+pub mod auth;
+pub mod blocklists;
+pub mod sandbox_advanced;
+pub mod pipeline;
 
 // =============================================================================
 // Core Types
