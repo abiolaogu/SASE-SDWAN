@@ -30,7 +30,7 @@ dashmap = "5"
 
 # WireGuard
 boringtun = { version = "0.6", optional = true }
-x25519-dalek = "2"
+x25519-dalek = "=2.0.0-rc.3"
 rand = "0.8"
 base64 = "0.21"
 

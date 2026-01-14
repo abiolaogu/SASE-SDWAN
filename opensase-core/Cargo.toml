@@ -28,6 +28,7 @@ members = [
     "crates/sase-ztna",
     "crates/sase-soc",
     "crates/sase-client",
+    "crates/sase-apigw",
 ]
 
 [workspace.package]

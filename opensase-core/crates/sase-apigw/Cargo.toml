@@ -1,0 +1,61 @@
+[package]
+name = "sase-apigw"
+version = "0.1.0"
+edition = "2021"
+description = "OpenSASE API Gateway - Kong-based API security, auth, and rate limiting"
+license = "Apache-2.0"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP client for Kong Admin API
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# JWT handling
+jsonwebtoken = "9"
+
+# Rate limiting algorithms
+dashmap = "5"
+parking_lot = "0.12"
+
+# Metrics
+prometheus = "0.13"
+
+# Configuration
+config = "0.13"
+
+# Crypto
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.21"
+
+# Random
+rand = "0.8"
+
+[dev-dependencies]
+tokio-test = "0.4"
+wiremock = "0.5"
+
+[features]
+default = []
+enterprise = []  # Kong Enterprise features
