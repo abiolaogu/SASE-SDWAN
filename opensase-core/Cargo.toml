@@ -29,6 +29,7 @@ members = [
     "crates/sase-soc",
     "crates/sase-client",
     "crates/sase-apigw",
+    "crates/sase-cloud-connector",
 ]
 
 [workspace.package]

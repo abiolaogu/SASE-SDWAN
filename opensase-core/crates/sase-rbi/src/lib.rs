@@ -35,6 +35,7 @@ pub mod download;
 pub mod swg;
 pub mod pool;
 pub mod encoder;
+pub mod gateway;
 
 // =============================================================================
 // Session Types
