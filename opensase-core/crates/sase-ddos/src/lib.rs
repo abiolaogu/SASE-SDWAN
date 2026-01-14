@@ -24,6 +24,9 @@ pub mod baseline;
 pub mod vpp;
 pub mod xdp;
 pub mod app_layer;
+pub mod scrubbing;
+pub mod ml_detection;
+pub mod dashboard;
 
 // =============================================================================
 // Attack Types
