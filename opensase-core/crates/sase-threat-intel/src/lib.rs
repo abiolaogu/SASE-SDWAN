@@ -52,6 +52,8 @@ pub mod correlator;
 pub mod enrichment;
 pub mod mitre;
 pub mod distribution;
+pub mod sources;
+pub mod sinkhole;
 
 // =============================================================================
 // Indicator of Compromise (IoC) Types
