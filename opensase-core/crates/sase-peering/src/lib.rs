@@ -12,6 +12,8 @@ pub mod bird_config;
 pub mod monitoring;
 pub mod looking_glass;
 pub mod api;
+pub mod manager;
+pub mod rpki;
 
 pub use ixp::*;
 pub use peeringdb::*;
@@ -22,6 +24,8 @@ pub use bird_config::*;
 pub use monitoring::*;
 pub use looking_glass::*;
 pub use api::*;
+pub use manager::*;
+pub use rpki::*;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
