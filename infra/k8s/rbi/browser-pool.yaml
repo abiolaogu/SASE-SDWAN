@@ -1,0 +1,286 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rbi
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    app.kubernetes.io/part-of: opensase
+
+---
+# Browser instance StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: browser-pool
+  namespace: rbi
+  labels:
+    app: rbi-browser
+spec:
+  serviceName: browser-pool
+  replicas: 50
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: rbi-browser
+  template:
+    metadata:
+      labels:
+        app: rbi-browser
+      annotations:
+        container.apparmor.security.beta.kubernetes.io/browser: runtime/default
+    spec:
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false
+      terminationGracePeriodSeconds: 5
+      
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      
+      containers:
+        - name: browser
+          image: ghcr.io/opensase/rbi-browser:latest
+          ports:
+            - containerPort: 9222
+              name: cdp
+            - containerPort: 5900
+              name: vnc
+            - containerPort: 8080
+              name: control
+          
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          
+          env:
+            - name: DISPLAY
+              value: ":99"
+            - name: CHROME_FLAGS
+              value: "--no-sandbox --disable-gpu --disable-dev-shm-usage --disable-extensions --disable-plugins"
+          
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: chrome-data
+              mountPath: /home/user/.config/chromium
+            - name: shm
+              mountPath: /dev/shm
+          
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 2
+      
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+        - name: chrome-data
+          emptyDir:
+            medium: Memory
+            sizeLimit: 500Mi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+      
+      dnsPolicy: None
+      dnsConfig:
+        nameservers:
+          - 10.96.0.10
+        searches:
+          - rbi.svc.cluster.local
+
+---
+# Headless service for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: browser-pool
+  namespace: rbi
+spec:
+  clusterIP: None
+  selector:
+    app: rbi-browser
+  ports:
+    - port: 9222
+      name: cdp
+    - port: 5900
+      name: vnc
+    - port: 8080
+      name: control
+
+---
+# Network policy for browser isolation
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: browser-isolation
+  namespace: rbi
+spec:
+  podSelector:
+    matchLabels:
+      app: rbi-browser
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: rbi-gateway
+      ports:
+        - port: 9222
+        - port: 5900
+        - port: 8080
+  egress:
+    # Only allow outbound to internet via proxy
+    - to:
+        - podSelector:
+            matchLabels:
+              app: rbi-egress-proxy
+      ports:
+        - port: 8888
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+
+---
+# RBI Gateway Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rbi-gateway
+  namespace: rbi
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: rbi-gateway
+  template:
+    metadata:
+      labels:
+        app: rbi-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: ghcr.io/opensase/rbi-gateway:latest
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 8443
+              name: https
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+          env:
+            - name: BROWSER_POOL_SERVICE
+              value: "browser-pool.rbi.svc.cluster.local"
+            - name: SESSION_TIMEOUT
+              value: "3600"
+
+---
+# Gateway Service (LoadBalancer)
+apiVersion: v1
+kind: Service
+metadata:
+  name: rbi-gateway
+  namespace: rbi
+spec:
+  type: LoadBalancer
+  selector:
+    app: rbi-gateway
+  ports:
+    - port: 443
+      targetPort: 8443
+      name: https
+
+---
+# Egress Proxy for filtering
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rbi-egress-proxy
+  namespace: rbi
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: rbi-egress-proxy
+  template:
+    metadata:
+      labels:
+        app: rbi-egress-proxy
+    spec:
+      containers:
+        - name: proxy
+          image: ghcr.io/opensase/rbi-egress-proxy:latest
+          ports:
+            - containerPort: 8888
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "256Mi"
+
+---
+# HorizontalPodAutoscaler for browser pool
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: browser-pool-hpa
+  namespace: rbi
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: browser-pool
+  minReplicas: 20
+  maxReplicas: 200
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
