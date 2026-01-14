@@ -1,0 +1,163 @@
+# FlexiManage Control Plane Deployment
+# OpenSASE SD-WAN Orchestrator
+
+version: '3.8'
+
+services:
+  # ============================================
+  # FLEXIMANAGE - SD-WAN Controller
+  # ============================================
+
+  fleximanage:
+    image: flexiwan/fleximanage:latest
+    container_name: fleximanage
+    ports:
+      - "3000:3000" # Web UI
+      - "4433:4433" # Device registration (WebSocket)
+    environment:
+      - MONGO_URL=mongodb://mongodb:27017/fleximanage
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${FLEXIWAN_JWT_SECRET:-opensase-jwt-secret-change-in-production}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@opensase.io}
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      # OpenSASE Integration
+      - OPENSASE_INTEGRATION=enabled
+      - OPENSASE_API_URL=http://osso-api:8081
+    volumes:
+      - ./config/fleximanage:/etc/fleximanage:ro
+      - fleximanage-logs:/var/log/fleximanage
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - opensase-control
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ============================================
+  # MONGODB - Configuration Store
+  # ============================================
+
+  mongodb:
+    image: mongo:5.0
+    container_name: flexiwan-mongo
+    command: [ "mongod", "--wiredTigerCacheSizeGB", "1" ]
+    volumes:
+      - flexiwan-mongo-data:/data/db
+      - ./config/mongo/init.js:/docker-entrypoint-initdb.d/init.js:ro
+    environment:
+      - MONGO_INITDB_DATABASE=fleximanage
+    networks:
+      - opensase-control
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # REDIS - Session Store & Pub/Sub
+  # ============================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: flexiwan-redis
+    command: [ "redis-server", "--appendonly", "yes", "--maxmemory", "256mb" ]
+    volumes:
+      - flexiwan-redis-data:/data
+    networks:
+      - opensase-control
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # OSSO API - OpenSASE Orchestrator
+  # ============================================
+
+  osso-api:
+    build:
+      context: ../../opensase-core
+      dockerfile: Dockerfile.osso
+    container_name: osso-api
+    ports:
+      - "8081:8081"
+      - "50051:50051" # gRPC for edge devices
+    environment:
+      - FLEXIWAN_URL=http://fleximanage:3000
+      - FLEXIWAN_WS_URL=ws://fleximanage:4433
+      - FLEXIWAN_EMAIL=${FLEXIWAN_ADMIN_EMAIL:-admin@opensase.io}
+      - FLEXIWAN_PASSWORD=${FLEXIWAN_ADMIN_PASSWORD}
+      - VPP_API_SOCKET=/run/vpp/api.sock
+      - SURICATA_SOCKET=/run/suricata/suricata-command.socket
+      - RUST_LOG=info,sase_sdwan=debug
+      - DATABASE_URL=mongodb://mongodb:27017/osso
+    volumes:
+      - osso-data:/var/lib/osso
+    depends_on:
+      - fleximanage
+      - mongodb
+    networks:
+      - opensase-control
+    restart: unless-stopped
+
+  # ============================================
+  # OPENSASE PORTAL - Management UI
+  # ============================================
+
+  opensase-portal:
+    build:
+      context: ../../opensase-portal
+      dockerfile: Dockerfile
+    container_name: opensase-portal
+    ports:
+      - "8080:80"
+    environment:
+      - API_URL=http://osso-api:8081
+      - FLEXIMANAGE_URL=http://fleximanage:3000
+    depends_on:
+      - osso-api
+    networks:
+      - opensase-control
+    restart: unless-stopped
+
+# ============================================
+# VOLUMES
+# ============================================
+
+volumes:
+  flexiwan-mongo-data:
+    driver: local
+  flexiwan-redis-data:
+    driver: local
+  fleximanage-logs:
+    driver: local
+  osso-data:
+    driver: local
+
+# ============================================
+# NETWORKS
+# ============================================
+
+networks:
+  opensase-control:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

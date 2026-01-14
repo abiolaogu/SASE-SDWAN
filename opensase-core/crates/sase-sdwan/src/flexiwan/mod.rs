@@ -4,6 +4,8 @@
 
 mod client;
 mod models;
+mod api;
 
 pub use client::FlexiWanClient;
 pub use models::*;
+pub use api::FlexiWanApi;
