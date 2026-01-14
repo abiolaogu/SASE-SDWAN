@@ -1,0 +1,214 @@
+# OBMO DPDK NIC Binding Role
+# Binds Intel/Mellanox NICs to DPDK drivers
+
+---
+- name: Install DPDK packages
+  apt:
+    name:
+      - dpdk
+      - dpdk-dev
+      - dpdk-doc
+      - libdpdk-dev
+    state: present
+
+# ===========================================
+# Detect NIC Type
+# ===========================================
+
+- name: Detect Mellanox NICs
+  shell: lspci -d 15b3: | wc -l
+  register: mellanox_count
+  changed_when: false
+
+- name: Detect Intel X710/XXV710 NICs
+  shell: lspci -d 8086:158b | wc -l  # XXV710
+  register: intel_xxv710_count
+  changed_when: false
+
+- name: Detect Intel E810 NICs
+  shell: lspci -d 8086:1592 | wc -l
+  register: intel_e810_count
+  changed_when: false
+
+- name: Set NIC type fact
+  set_fact:
+    detected_nic_type: "{{ 
+      'mellanox' if mellanox_count.stdout | int > 0 else
+      'intel_e810' if intel_e810_count.stdout | int > 0 else
+      'intel_xxv710' if intel_xxv710_count.stdout | int > 0 else
+      'intel_x710'
+    }}"
+
+- name: Display detected NIC type
+  debug:
+    msg: "Detected NIC type: {{ detected_nic_type }}"
+
+# ===========================================
+# Mellanox Configuration
+# ===========================================
+
+- name: Install Mellanox OFED
+  block:
+    - name: Download MLNX OFED
+      get_url:
+        url: "https://content.mellanox.com/ofed/MLNX_OFED-5.9-0.5.6.0/MLNX_OFED_LINUX-5.9-0.5.6.0-ubuntu22.04-x86_64.tgz"
+        dest: /tmp/mlnx_ofed.tgz
+        mode: '0644'
+      
+    - name: Extract MLNX OFED
+      unarchive:
+        src: /tmp/mlnx_ofed.tgz
+        dest: /tmp
+        remote_src: yes
+        
+    - name: Install MLNX OFED
+      shell: |
+        cd /tmp/MLNX_OFED_LINUX-* && \
+        ./mlnxofedinstall --force --without-fw-update --add-kernel-support
+      args:
+        creates: /usr/bin/ibdev2netdev
+        
+    - name: Load mlx5_core module
+      modprobe:
+        name: mlx5_core
+        state: present
+  when: detected_nic_type == 'mellanox'
+
+# ===========================================
+# Intel NIC Configuration
+# ===========================================
+
+- name: Load VFIO-PCI module
+  modprobe:
+    name: vfio-pci
+    state: present
+  when: detected_nic_type in ['intel_x710', 'intel_xxv710', 'intel_e810']
+
+- name: Ensure VFIO-PCI loads at boot
+  lineinfile:
+    path: /etc/modules-load.d/vfio.conf
+    line: vfio-pci
+    create: yes
+  when: detected_nic_type in ['intel_x710', 'intel_xxv710', 'intel_e810']
+
+# ===========================================
+# Get NIC PCI Addresses
+# ===========================================
+
+- name: Get DPDK NIC PCI addresses
+  shell: |
+    case "{{ detected_nic_type }}" in
+      mellanox) lspci -d 15b3: | awk '{print $1}' ;;
+      intel_e810) lspci -d 8086:1592 | awk '{print $1}' ;;
+      intel_xxv710) lspci -d 8086:158b | awk '{print $1}' ;;
+      intel_x710) lspci -d 8086:1572 | awk '{print $1}' ;;
+    esac
+  register: nic_pci_addresses
+  changed_when: false
+
+- name: Set PCI addresses fact
+  set_fact:
+    dpdk_pci_addresses: "{{ nic_pci_addresses.stdout_lines }}"
+
+- name: Display PCI addresses
+  debug:
+    msg: "DPDK NIC PCI addresses: {{ dpdk_pci_addresses }}"
+
+# ===========================================
+# Bind NICs to DPDK (Intel only)
+# ===========================================
+
+- name: Create DPDK bind script
+  copy:
+    dest: /usr/local/bin/dpdk-bind-nics.sh
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      # Bind NICs to DPDK driver
+      
+      DRIVER="${1:-vfio-pci}"
+      
+      {% for pci in dpdk_pci_addresses[1:] %}
+      # Skip first NIC (management)
+      echo "Binding {{ pci }} to $DRIVER"
+      dpdk-devbind.py --bind=$DRIVER {{ pci }} || \
+        python3 /usr/share/dpdk/usertools/dpdk-devbind.py --bind=$DRIVER {{ pci }}
+      {% endfor %}
+  when: detected_nic_type != 'mellanox'
+
+- name: Create DPDK bind service
+  copy:
+    dest: /etc/systemd/system/dpdk-bind.service
+    content: |
+      [Unit]
+      Description=Bind NICs to DPDK
+      Before=vpp.service
+      
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/dpdk-bind-nics.sh
+      RemainAfterExit=yes
+      
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  when: detected_nic_type != 'mellanox'
+  notify: Enable DPDK bind service
+
+# ===========================================
+# VPP DPDK Configuration
+# ===========================================
+
+- name: Create VPP DPDK config snippet
+  copy:
+    dest: /etc/vpp/dpdk-nics.conf
+    content: |
+      dpdk {
+        {% if detected_nic_type == 'mellanox' %}
+        # Mellanox uses native driver with DPDK
+        dev default {
+          num-rx-queues {{ vpp_rx_queues | default(16) }}
+          num-tx-queues {{ vpp_tx_queues | default(16) }}
+          num-rx-desc {{ vpp_rx_desc | default(4096) }}
+          num-tx-desc {{ vpp_tx_desc | default(4096) }}
+        }
+        {% for pci in dpdk_pci_addresses[1:] %}
+        dev {{ pci }}
+        {% endfor %}
+        {% else %}
+        # Intel NICs with VFIO-PCI
+        dev default {
+          num-rx-queues {{ vpp_rx_queues | default(16) }}
+          num-tx-queues {{ vpp_tx_queues | default(16) }}
+          num-rx-desc {{ vpp_rx_desc | default(8192) }}
+          num-tx-desc {{ vpp_tx_desc | default(8192) }}
+        }
+        {% for pci in dpdk_pci_addresses[1:] %}
+        dev {{ pci }}
+        {% endfor %}
+        uio-driver vfio-pci
+        {% endif %}
+        
+        socket-mem {{ vpp_socket_mem | default('8192,8192') }}
+        num-mbufs {{ vpp_mbufs | default(524288) }}
+        no-multi-seg
+      }
+    mode: '0644'
+  notify: Restart VPP
+
+# ===========================================
+# Handlers
+# ===========================================
+
+handlers:
+  - name: Enable DPDK bind service
+    systemd:
+      name: dpdk-bind
+      enabled: yes
+      daemon_reload: yes
+
+  - name: Restart VPP
+    systemd:
+      name: vpp
+      state: restarted
+    when: vpp_installed | default(false)

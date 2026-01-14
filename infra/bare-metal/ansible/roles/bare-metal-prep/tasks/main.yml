@@ -1,0 +1,197 @@
+# OBMO Bare Metal Preparation Role
+# Configures dedicated servers for 100 Gbps operation
+
+---
+- name: Update system packages
+  apt:
+    update_cache: yes
+    upgrade: dist
+
+- name: Install essential packages
+  apt:
+    name:
+      - curl
+      - wget
+      - git
+      - jq
+      - htop
+      - iotop
+      - net-tools
+      - tcpdump
+      - iperf3
+      - ethtool
+      - pciutils
+      - lshw
+      - numactl
+      - hwloc
+      - cpufrequtils
+      - linux-tools-generic
+      - python3
+      - python3-pip
+    state: present
+
+# ===========================================
+# 100 Gbps Kernel Tuning
+# ===========================================
+
+- name: Configure sysctl for 100 Gbps
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+    sysctl_file: /etc/sysctl.d/99-obmo-100g.conf
+  loop: "{{ sysctl_100g | dict2items }}"
+  vars:
+    sysctl_100g:
+      net.core.rmem_max: 2147483647
+      net.core.wmem_max: 2147483647
+      net.core.rmem_default: 536870912
+      net.core.wmem_default: 536870912
+      net.core.netdev_max_backlog: 2000000
+      net.core.netdev_budget: 100000
+      net.ipv4.tcp_rmem: "4096 4194304 2147483647"
+      net.ipv4.tcp_wmem: "4096 4194304 2147483647"
+      net.ipv4.tcp_congestion_control: bbr
+      net.ipv4.ip_forward: 1
+      net.ipv6.conf.all.forwarding: 1
+      vm.nr_hugepages: "{{ hugepages | default(8192) }}"
+      vm.swappiness: 1
+
+# ===========================================
+# Hugepages Configuration
+# ===========================================
+
+- name: Create hugepages mount point
+  file:
+    path: /dev/hugepages
+    state: directory
+    mode: '0755'
+
+- name: Mount hugepages
+  mount:
+    path: /dev/hugepages
+    src: hugetlbfs
+    fstype: hugetlbfs
+    opts: "defaults,pagesize=2M"
+    state: mounted
+
+# ===========================================
+# CPU Configuration
+# ===========================================
+
+- name: Detect NUMA topology
+  command: numactl --hardware
+  register: numa_output
+  changed_when: false
+
+- name: Display NUMA topology
+  debug:
+    var: numa_output.stdout_lines
+
+- name: Set CPU governor to performance
+  shell: |
+    for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+      echo performance > $cpu 2>/dev/null || true
+    done
+  changed_when: false
+
+- name: Disable CPU frequency scaling
+  lineinfile:
+    path: /etc/default/cpufrequtils
+    line: 'GOVERNOR="performance"'
+    create: yes
+
+# ===========================================
+# IOMMU Configuration
+# ===========================================
+
+- name: Check IOMMU status
+  command: dmesg | grep -i iommu
+  register: iommu_check
+  changed_when: false
+  failed_when: false
+
+- name: Update GRUB for IOMMU
+  lineinfile:
+    path: /etc/default/grub
+    regexp: '^GRUB_CMDLINE_LINUX='
+    line: 'GRUB_CMDLINE_LINUX="intel_iommu=on iommu=pt default_hugepagesz=2M hugepagesz=2M hugepages={{ hugepages | default(8192) }}"'
+    backup: yes
+  register: grub_updated
+  when: "'IOMMU' not in iommu_check.stdout"
+
+- name: Update GRUB
+  command: update-grub
+  when: grub_updated.changed
+
+# ===========================================
+# Disable Unnecessary Services
+# ===========================================
+
+- name: Disable unneeded services
+  systemd:
+    name: "{{ item }}"
+    enabled: no
+    state: stopped
+  loop:
+    - snapd
+    - snap.lxd.daemon
+    - snap.lxd.activate
+  failed_when: false
+
+# ===========================================
+# Network Configuration
+# ===========================================
+
+- name: Disable NetworkManager for DPDK NICs
+  lineinfile:
+    path: /etc/NetworkManager/NetworkManager.conf
+    insertafter: '\[main\]'
+    line: 'unmanaged-devices=interface-name:{{ item }}'
+  loop: "{{ dpdk_interfaces | default(['eth1', 'eth2']) }}"
+  when: ansible_os_family == 'Debian'
+  notify: Restart NetworkManager
+
+# ===========================================
+# IRQ Affinity
+# ===========================================
+
+- name: Create IRQ affinity script
+  copy:
+    dest: /usr/local/bin/set-irq-affinity.sh
+    mode: '0755'
+    content: |
+      #!/bin/bash
+      # Set IRQ affinity for 100G NICs
+      
+      for IRQ in $(grep -l "${1:-eth}" /proc/irq/*/smp_affinity_list 2>/dev/null | cut -d'/' -f4); do
+        # Spread across NUMA cores
+        echo "${2:-2-15}" > /proc/irq/$IRQ/smp_affinity_list 2>/dev/null || true
+      done
+
+- name: Install irqbalance service override
+  copy:
+    dest: /etc/systemd/system/irqbalance.service.d/override.conf
+    content: |
+      [Service]
+      Environment="IRQBALANCE_ARGS=--banirq=24 --banirq=25 --banirq=26 --banirq=27"
+    mode: '0644'
+  notify: Restart irqbalance
+
+# ===========================================
+# Handlers
+# ===========================================
+
+handlers:
+  - name: Restart NetworkManager
+    systemd:
+      name: NetworkManager
+      state: restarted
+    when: ansible_os_family == 'Debian'
+
+  - name: Restart irqbalance
+    systemd:
+      name: irqbalance
+      state: restarted
+      daemon_reload: yes
