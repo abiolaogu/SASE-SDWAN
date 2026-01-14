@@ -1,0 +1,77 @@
+# Safe Demo Rules for OpenSASE-Lab
+# These rules trigger on SAFE, non-malicious traffic patterns
+# Used for demonstrating IPS detection without any malicious content
+
+# ============================================
+# Test Signatures (Trigger with curl commands)
+# ============================================
+
+# Test rule: Triggers on any request to /opensase-test
+alert http any any -> any any (msg:"OPENSASE-LAB Test Alert - HTTP Request Detected"; flow:established,to_server; http.uri; content:"/opensase-test"; classtype:policy-violation; sid:9000001; rev:1;)
+
+# Test rule: Triggers on User-Agent containing "OpenSASE-Test"
+alert http any any -> any any (msg:"OPENSASE-LAB Test Alert - Test User-Agent Detected"; flow:established,to_server; http.user_agent; content:"OpenSASE-Test"; nocase; classtype:policy-violation; sid:9000002; rev:1;)
+
+# Test rule: Triggers on HTTP header X-OpenSASE-Test
+alert http any any -> any any (msg:"OPENSASE-LAB Test Alert - Test Header Detected"; flow:established,to_server; http.header; content:"X-OpenSASE-Test"; classtype:policy-violation; sid:9000003; rev:1;)
+
+# ============================================
+# DNS Demo Alerts
+# ============================================
+
+# Detect DNS query for test domain
+alert dns any any -> any any (msg:"OPENSASE-LAB Test Alert - Test DNS Query"; dns.query; content:"test.opensase.lab"; nocase; classtype:policy-violation; sid:9000010; rev:1;)
+
+# Detect DNS query for demo blocked domain
+alert dns any any -> any any (msg:"OPENSASE-LAB Demo - Blocked Domain Query"; dns.query; content:"blocked.demo.lab"; nocase; classtype:policy-violation; sid:9000011; rev:1;)
+
+# ============================================
+# Network Policy Alerts (Informational)
+# ============================================
+
+# Alert on SSH connections (informational)
+alert tcp any any -> any 22 (msg:"OPENSASE-LAB Info - SSH Connection Detected"; flow:to_server; classtype:network-scan; sid:9000020; rev:1; threshold:type both, track by_src, count 3, seconds 60;)
+
+# Alert on high-volume connections from single host
+alert tcp any any -> any any (msg:"OPENSASE-LAB Info - High Volume Connections"; flow:to_server,established; classtype:misc-activity; sid:9000021; rev:1; threshold:type both, track by_src, count 100, seconds 60;)
+
+# ============================================
+# ICMP Demo Alerts
+# ============================================
+
+# Detect ICMP with specific payload pattern (for demo)
+alert icmp any any -> any any (msg:"OPENSASE-LAB Test Alert - ICMP Test Pattern"; content:"opensase"; nocase; classtype:misc-activity; sid:9000030; rev:1;)
+
+# ============================================
+# TLS/SSL Demo Alerts
+# ============================================
+
+# Alert on self-signed certificates (informational for demo)
+alert tls any any -> any any (msg:"OPENSASE-LAB Info - Self-Signed Certificate"; tls.cert_issuer; content:"CN=localhost"; classtype:policy-violation; sid:9000040; rev:1;)
+
+# ============================================
+# Data Pattern Alerts (Non-malicious demos)
+# ============================================
+
+# Detect test credit card pattern (clearly fake: 4111-1111-1111-1111)
+alert http any any -> any any (msg:"OPENSASE-LAB Demo - Test Credit Card Pattern Detected"; flow:established,to_server; content:"4111111111111111"; classtype:sensitive-data; sid:9000050; rev:1;)
+
+# Detect test SSN pattern (clearly fake: 000-00-0000)
+alert http any any -> any any (msg:"OPENSASE-LAB Demo - Test SSN Pattern Detected"; flow:established,to_server; content:"000-00-0000"; classtype:sensitive-data; sid:9000051; rev:1;)
+
+# ============================================
+# File Transfer Demo Alerts
+# ============================================
+
+# Detect EICAR test file (standard antivirus test pattern)
+alert http any any -> any any (msg:"OPENSASE-LAB Demo - EICAR Test Pattern"; flow:established; content:"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"; classtype:trojan-activity; sid:9000060; rev:1;)
+
+# ============================================
+# Protocol Anomaly Demos
+# ============================================
+
+# Alert on HTTP CONNECT method (proxy tunneling)
+alert http any any -> any any (msg:"OPENSASE-LAB Info - HTTP CONNECT Method"; flow:to_server; http.method; content:"CONNECT"; classtype:policy-violation; sid:9000070; rev:1;)
+
+# Alert on unusual HTTP methods
+alert http any any -> any any (msg:"OPENSASE-LAB Info - Unusual HTTP Method (TRACE)"; flow:to_server; http.method; content:"TRACE"; classtype:web-application-attack; sid:9000071; rev:1;)

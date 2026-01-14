@@ -1,0 +1,30 @@
+[package]
+name = "sase-orchestrator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Global PoP Orchestrator - Multi-cloud SASE deployment"
+
+[dependencies]
+sase-common = { path = "../sase-common" }
+
+# Core
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+
+# Async
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time", "process"] }
+async-trait.workspace = true
+
+# HTTP
+reqwest = { version = "0.11", features = ["json"] }
+
+# Templates
+handlebars = "5.1"
+
+[dev-dependencies]
+tokio-test.workspace = true

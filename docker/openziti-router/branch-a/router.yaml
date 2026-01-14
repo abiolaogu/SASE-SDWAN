@@ -1,0 +1,80 @@
+# OpenZiti Edge Router Configuration - Branch A
+# Router that hosts app1 service
+
+v: 3
+
+# ============================================
+# Identity
+# ============================================
+identity:
+  cert: /persistent/pki/router-a.cert
+  server_cert: /persistent/pki/router-a.server.cert
+  key: /persistent/pki/router-a.key
+  ca: /persistent/pki/router-a.ca.cert
+
+# ============================================
+# Controller Connection
+# ============================================
+ctrl:
+  endpoint: tls:ziti-controller:6262
+
+# ============================================
+# Link Configuration
+# ============================================
+link:
+  dialers:
+    - binding: transport
+
+  listeners:
+    - binding: transport
+      bind: tls:0.0.0.0:10080
+      advertise: tls:ziti-router-a:10080
+
+# ============================================
+# Edge & Tunnel Listeners
+# ============================================
+listeners:
+  # Edge listener for clients
+  - binding: edge
+    address: tls:0.0.0.0:3022
+    options:
+      advertise: ziti-router-a:3022
+      connectTimeoutMs: 5000
+      getSessionTimeout: 60s
+
+  # Tunnel listener for hosting app1
+  - binding: tunnel
+    options:
+      mode: host
+      resolver: udp://127.0.0.1:53
+
+# ============================================
+# Forwarder
+# ============================================
+forwarder:
+  latencyProbeInterval: 10s
+  xgressDialQueueLength: 1000
+  xgressDialWorkerCount: 128
+  linkDialQueueLength: 1000
+  linkDialWorkerCount: 32
+
+# ============================================
+# CSR
+# ============================================
+csr:
+  country: US
+  province: NC
+  locality: Charlotte
+  organization: OpenSASE Lab
+  organizationalUnit: Branch-A
+  sans:
+    dns:
+      - localhost
+      - ziti-router-a
+    ip:
+      - 127.0.0.1
+      - 10.201.0.10
+
+metrics:
+  reportInterval: 15s
+  messageQueueSize: 10

@@ -1,0 +1,105 @@
+# Prometheus Configuration for OpenSASE-Lab
+# Scrapes metrics from all lab components
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'opensase-lab'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files: []
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          component: 'prometheus'
+
+  # Security PoP metrics (via custom API)
+  - job_name: 'security-pop'
+    static_configs:
+      - targets: ['security-pop:9100']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'security-pop'
+
+  - job_name: 'security-pop-api'
+    static_configs:
+      - targets: ['security-pop:8080']
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'security-pop'
+    labels:
+      site: 'pop'
+
+  # FlexiWAN Controller metrics
+  - job_name: 'flexiwan-controller'
+    metrics_path: '/api/metrics'
+    static_configs:
+      - targets: ['flexiwan-controller:3000']
+        labels:
+          component: 'flexiwan-controller'
+
+  # Wazuh Manager metrics
+  - job_name: 'wazuh-manager'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['wazuh-manager:55000']
+        labels:
+          component: 'wazuh-manager'
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  # Wazuh Indexer metrics
+  - job_name: 'wazuh-indexer'
+    metrics_path: '/_prometheus/metrics'
+    static_configs:
+      - targets: ['wazuh-indexer:9200']
+        labels:
+          component: 'wazuh-indexer'
+
+  # Keycloak metrics
+  - job_name: 'keycloak'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['keycloak:8080']
+        labels:
+          component: 'keycloak'
+
+  # OpenZiti Controller metrics
+  - job_name: 'ziti-controller'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['ziti-controller:1280']
+        labels:
+          component: 'ziti-controller'
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true
+
+  # Grafana metrics
+  - job_name: 'grafana'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['grafana:3000']
+        labels:
+          component: 'grafana'
+
+  # Portal Backend metrics
+  - job_name: 'portal-backend'
+    metrics_path: '/api/metrics'
+    static_configs:
+      - targets: ['portal-backend:8000']
+        labels:
+          component: 'portal'

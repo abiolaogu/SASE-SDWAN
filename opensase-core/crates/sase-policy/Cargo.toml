@@ -1,0 +1,21 @@
+[package]
+name = "sase-policy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ultra-fast policy engine with <1μs lookups"
+
+[dependencies]
+sase-common = { path = "../sase-common" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+bytes.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+arc-swap.workspace = true
+tracing.workspace = true
+moka = { version = "0.12", features = ["future", "sync"] }
+
+[dev-dependencies]
+criterion.workspace = true

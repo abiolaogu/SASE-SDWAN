@@ -1,0 +1,102 @@
+# Corporate Access Policy
+# Example policy demonstrating all features
+
+name: corporate-access
+version: "1.0"
+description: Corporate network access policy with segmentation and inspection
+
+# User/group definitions
+users:
+  - name: employees
+    type: group
+    attributes:
+      - role: employee
+      - department: any
+  
+  - name: contractors
+    type: group
+    attributes:
+      - role: contractor
+  
+  - name: guests
+    type: group
+    attributes:
+      - role: guest
+
+# Application definitions
+apps:
+  - name: app1
+    address: app1.ziti
+    port: 80
+    protocol: tcp
+    segment: corp
+    inspection: full
+    
+  - name: app2
+    address: app2.ziti
+    port: 80
+    protocol: tcp
+    segment: corp
+    inspection: metadata
+    
+  - name: external-saas
+    address: saas.example.com
+    port: 443
+    protocol: tcp
+    segment: corp
+    inspection: metadata
+
+# Network segments
+segments:
+  - name: corp
+    vlan: 100
+    vrf_id: 1
+    description: Corporate trusted network
+    
+  - name: guest
+    vlan: 200
+    vrf_id: 2
+    description: Guest network with limited access
+    
+  - name: iot
+    vlan: 300
+    vrf_id: 3
+    description: IoT device network
+
+# Egress policies
+egress:
+  corp:
+    action: route-via-pop
+    inspection: full
+    preferred_wan: wan1
+    
+  guest:
+    action: local-breakout
+    inspection: none
+    preferred_wan: wan1
+    
+  iot:
+    action: drop
+    inspection: full
+
+# Access rules
+access_rules:
+  - name: employees-full-access
+    users: [employees]
+    apps: [app1, app2, external-saas]
+    action: allow
+    priority: 100
+    
+  - name: contractors-limited
+    users: [contractors]
+    apps: [app1]
+    action: allow
+    priority: 200
+    conditions:
+      time_window: business_hours
+      
+  - name: guests-denied
+    users: [guests]
+    apps: [app1, app2]
+    action: deny
+    priority: 300

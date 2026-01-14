@@ -1,0 +1,29 @@
+[project]
+name = "casb-lite"
+version = "1.0.0"
+description = "CASB-lite - Basic SaaS visibility for Google Workspace and Microsoft 365"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.23.0",
+    "pydantic>=2.0.0",
+    "typer>=0.9.0",
+    "httpx>=0.24.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+google = ["google-auth>=2.0.0", "google-api-python-client>=2.0.0"]
+microsoft = ["msal>=1.20.0"]
+dev = ["pytest>=7.0.0", "pytest-asyncio>=0.21.0"]
+
+[project.scripts]
+casb-lite = "casb_lite.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]

@@ -1,0 +1,246 @@
+<!-- 
+  OpenSASE-Lab Custom Wazuh Rules
+  Detection rules for SASE components: Suricata, FlexiWAN, OpenZiti
+-->
+
+<group name="opensase,">
+
+  <!-- ============================================
+       Suricata IPS Alerts
+       ============================================ -->
+  
+  <!-- Suricata Alert - Generic -->
+  <rule id="100001" level="5">
+    <decoded_as>suricata</decoded_as>
+    <field name="event_type">^alert$</field>
+    <description>Suricata IPS: $(alert.signature)</description>
+    <group>ids,suricata,</group>
+  </rule>
+
+  <!-- Suricata Alert - High Severity -->
+  <rule id="100002" level="10">
+    <if_sid>100001</if_sid>
+    <field name="alert.severity">1</field>
+    <description>Suricata IPS HIGH severity: $(alert.signature)</description>
+    <group>ids,suricata,attack,</group>
+  </rule>
+
+  <!-- Suricata Alert - Medium Severity -->
+  <rule id="100003" level="7">
+    <if_sid>100001</if_sid>
+    <field name="alert.severity">2</field>
+    <description>Suricata IPS MEDIUM severity: $(alert.signature)</description>
+    <group>ids,suricata,</group>
+  </rule>
+
+  <!-- Suricata - OpenSASE Test Alert -->
+  <rule id="100010" level="3">
+    <if_sid>100001</if_sid>
+    <field name="alert.signature_id">^900000</field>
+    <description>OpenSASE-Lab Test Alert: $(alert.signature)</description>
+    <group>opensase,test,</group>
+  </rule>
+
+  <!-- Suricata - DNS Query Alert -->
+  <rule id="100011" level="4">
+    <decoded_as>suricata</decoded_as>
+    <field name="event_type">^dns$</field>
+    <field name="dns.rrname">\.opensase\.lab$</field>
+    <description>DNS query for OpenSASE domain: $(dns.rrname)</description>
+    <group>dns,opensase,</group>
+  </rule>
+
+  <!-- ============================================
+       FlexiWAN SD-WAN Events
+       ============================================ -->
+
+  <!-- FlexiWAN - Device Connected -->
+  <rule id="100100" level="3">
+    <decoded_as>flexiwan</decoded_as>
+    <field name="event">^device_connected$</field>
+    <description>FlexiWAN: Device $(device_name) connected</description>
+    <group>sdwan,flexiwan,</group>
+  </rule>
+
+  <!-- FlexiWAN - Device Disconnected -->
+  <rule id="100101" level="6">
+    <decoded_as>flexiwan</decoded_as>
+    <field name="event">^device_disconnected$</field>
+    <description>FlexiWAN: Device $(device_name) disconnected</description>
+    <group>sdwan,flexiwan,alert,</group>
+  </rule>
+
+  <!-- FlexiWAN - Tunnel Down -->
+  <rule id="100102" level="8">
+    <decoded_as>flexiwan</decoded_as>
+    <field name="event">^tunnel_down$</field>
+    <description>FlexiWAN: Tunnel $(tunnel_name) is DOWN</description>
+    <group>sdwan,flexiwan,network_failure,</group>
+  </rule>
+
+  <!-- FlexiWAN - Tunnel Up -->
+  <rule id="100103" level="3">
+    <decoded_as>flexiwan</decoded_as>
+    <field name="event">^tunnel_up$</field>
+    <description>FlexiWAN: Tunnel $(tunnel_name) is UP</description>
+    <group>sdwan,flexiwan,</group>
+  </rule>
+
+  <!-- FlexiWAN - WAN Failover -->
+  <rule id="100104" level="7">
+    <decoded_as>flexiwan</decoded_as>
+    <field name="event">^wan_failover$</field>
+    <description>FlexiWAN: WAN failover on $(device_name) from $(from_wan) to $(to_wan)</description>
+    <group>sdwan,flexiwan,failover,</group>
+  </rule>
+
+  <!-- FlexiWAN - Policy Applied -->
+  <rule id="100105" level="3">
+    <decoded_as>flexiwan</decoded_as>
+    <field name="event">^policy_applied$</field>
+    <description>FlexiWAN: Policy $(policy_name) applied to $(device_name)</description>
+    <group>sdwan,flexiwan,config_change,</group>
+  </rule>
+
+  <!-- ============================================
+       OpenZiti ZTNA Events
+       ============================================ -->
+
+  <!-- Ziti - Session Created -->
+  <rule id="100200" level="3">
+    <decoded_as>ziti</decoded_as>
+    <field name="event_type">^edge.sessions$</field>
+    <description>Ziti: Session created for $(identity) to $(service)</description>
+    <group>ztna,ziti,access,</group>
+  </rule>
+
+  <!-- Ziti - Session Terminated -->
+  <rule id="100201" level="4">
+    <decoded_as>ziti</decoded_as>
+    <field name="event_type">^session.deleted$</field>
+    <description>Ziti: Session terminated for $(identity)</description>
+    <group>ztna,ziti,</group>
+  </rule>
+
+  <!-- Ziti - Authentication Failed -->
+  <rule id="100202" level="8">
+    <decoded_as>ziti</decoded_as>
+    <field name="event_type">^authentication.failed$</field>
+    <description>Ziti: Authentication failed for $(identity)</description>
+    <group>ztna,ziti,authentication_failed,</group>
+  </rule>
+
+  <!-- Ziti - Service Access Denied -->
+  <rule id="100203" level="7">
+    <decoded_as>ziti</decoded_as>
+    <field name="event_type">^authorization.failed$</field>
+    <description>Ziti: Access denied - $(identity) attempted $(service)</description>
+    <group>ztna,ziti,access_denied,</group>
+  </rule>
+
+  <!-- Ziti - Router Offline -->
+  <rule id="100204" level="8">
+    <decoded_as>ziti</decoded_as>
+    <field name="event_type">^fabric.routers$</field>
+    <field name="router.isOnline">false</field>
+    <description>Ziti: Router $(router.name) went OFFLINE</description>
+    <group>ztna,ziti,network_failure,</group>
+  </rule>
+
+  <!-- Ziti - New Identity Enrolled -->
+  <rule id="100205" level="5">
+    <decoded_as>ziti</decoded_as>
+    <field name="event_type">^identity.created$</field>
+    <description>Ziti: New identity enrolled - $(identity.name)</description>
+    <group>ztna,ziti,config_change,</group>
+  </rule>
+
+  <!-- ============================================
+       DNS Security Events
+       ============================================ -->
+
+  <!-- Blocked Domain Query -->
+  <rule id="100300" level="6">
+    <decoded_as>unbound</decoded_as>
+    <match>blocked.demo.lab</match>
+    <description>DNS: Query for blocked domain $(query)</description>
+    <group>dns,blocked,security,</group>
+  </rule>
+
+  <!-- Suspicious DNS Query Rate -->
+  <rule id="100301" level="8" frequency="50" timeframe="60">
+    <if_matched_sid>100011</if_matched_sid>
+    <same_source_ip />
+    <description>DNS: High query rate from $(srcip) - possible tunneling</description>
+    <group>dns,anomaly,</group>
+  </rule>
+
+  <!-- ============================================
+       Proxy Events
+       ============================================ -->
+
+  <!-- Proxy Access Denied -->
+  <rule id="100400" level="4">
+    <decoded_as>squid</decoded_as>
+    <field name="status">403</field>
+    <description>Proxy: Access denied to $(url)</description>
+    <group>proxy,access_denied,</group>
+  </rule>
+
+  <!-- Proxy - High Volume User -->
+  <rule id="100401" level="6" frequency="100" timeframe="300">
+    <decoded_as>squid</decoded_as>
+    <same_source_ip />
+    <description>Proxy: High traffic volume from $(srcip)</description>
+    <group>proxy,anomaly,</group>
+  </rule>
+
+  <!-- ============================================
+       Correlation Rules
+       ============================================ -->
+
+  <!-- Multiple Auth Failures from Same IP -->
+  <rule id="100500" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>100202</if_matched_sid>
+    <same_source_ip />
+    <description>CORRELATION: Multiple Ziti auth failures from $(srcip) - possible brute force</description>
+    <group>correlation,brute_force,</group>
+  </rule>
+
+  <!-- IPS Alert + Auth Failure from Same IP -->
+  <rule id="100501" level="12">
+    <if_sid>100002</if_sid>
+    <if_matched_sid>100202</if_matched_sid>
+    <same_source_ip />
+    <description>CORRELATION: IPS alert followed by auth failure from $(srcip)</description>
+    <group>correlation,attack,</group>
+  </rule>
+
+  <!-- Device Down + Tunnel Down -->
+  <rule id="100502" level="9">
+    <if_sid>100101</if_sid>
+    <if_matched_sid>100102</if_matched_sid>
+    <same_field>device_name</same_field>
+    <description>CORRELATION: Device $(device_name) and its tunnels are down</description>
+    <group>correlation,network_failure,</group>
+  </rule>
+
+  <!-- ============================================
+       Demo/Test Rules
+       ============================================ -->
+
+  <!-- Demo: Synthetic Alert Detected -->
+  <rule id="100900" level="5">
+    <match>OPENSASE-SYNTHETIC-ALERT</match>
+    <description>OpenSASE Demo: Synthetic alert generated</description>
+    <group>demo,synthetic,</group>
+  </rule>
+
+  <!-- Demo: Test Correlation -->
+  <rule id="100901" level="3">
+    <match>OPENSASE-TEST-EVENT</match>
+    <description>OpenSASE Demo: Test event for correlation</description>
+    <group>demo,test,</group>
+  </rule>
+
+</group>

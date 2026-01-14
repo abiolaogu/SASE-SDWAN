@@ -1,0 +1,24 @@
+[package]
+name = "sase-ml"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ML inference engine for predictive SASE features"
+
+[dependencies]
+sase-common = { path = "../sase-common" }
+sase-path = { path = "../sase-path" }
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+
+# ML inference (optional, for when ONNX is available)
+# ort = { workspace = true, optional = true }
+
+[features]
+default = []
+onnx = []  # Enable ONNX runtime
+
+[dev-dependencies]
+criterion.workspace = true

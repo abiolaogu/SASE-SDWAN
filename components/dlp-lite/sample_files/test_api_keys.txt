@@ -1,0 +1,22 @@
+# FAKE DATA - FOR TESTING ONLY
+# These are fake API keys for DLP testing
+
+Configuration file with exposed secrets (DEMO):
+
+# Fake AWS credentials
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+
+# Fake API keys
+api_key = "sk_test_abcdefghijklmnopqrstuvwxyz123456"
+stripe_secret = "sk_live_FAKE_KEY_FOR_TESTING_ONLY_1234"
+
+# Fake token
+auth_token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0ZXN0IjoiZGF0YSJ9.FAKE"
+
+# Fake private key marker
+-----BEGIN RSA PRIVATE KEY-----
+FAKE_KEY_DATA_FOR_TESTING_PURPOSES_ONLY
+-----END RSA PRIVATE KEY-----
+
+Note: These are intentionally fake credentials for DLP testing.

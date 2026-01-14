@@ -1,0 +1,16 @@
+[package]
+name = "sase-fpe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenSASE Fast Path Engine"
+
+[dependencies]
+sase-common = { path = "../sase-common" }
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true

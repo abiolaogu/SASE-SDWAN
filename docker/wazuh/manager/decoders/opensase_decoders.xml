@@ -1,0 +1,116 @@
+<!--
+  OpenSASE-Lab Custom Decoders
+  Parsers for Suricata, FlexiWAN, and OpenZiti logs
+-->
+
+<!-- ============================================
+     Suricata EVE JSON Decoder
+     ============================================ -->
+<decoder name="suricata">
+  <prematch>^{"timestamp":</prematch>
+</decoder>
+
+<decoder name="suricata-fields">
+  <parent>suricata</parent>
+  <plugin_decoder>JSON_Decoder</plugin_decoder>
+</decoder>
+
+<!-- ============================================
+     FlexiWAN JSON Decoder
+     ============================================ -->
+<decoder name="flexiwan">
+  <prematch>^{"event":|^{"type":"flexiwan</prematch>
+</decoder>
+
+<decoder name="flexiwan-fields">
+  <parent>flexiwan</parent>
+  <plugin_decoder>JSON_Decoder</plugin_decoder>
+</decoder>
+
+<!-- FlexiWAN Syslog Format -->
+<decoder name="flexiwan-syslog">
+  <prematch>flexiwan</prematch>
+  <regex>flexiwan\[(\d+)\]: (\S+) - (\S+): (.+)</regex>
+  <order>pid,level,component,message</order>
+</decoder>
+
+<!-- ============================================
+     OpenZiti JSON Decoder
+     ============================================ -->
+<decoder name="ziti">
+  <prematch>^{"timestamp":.+,"event_type":|^{"namespace":"edge"</prematch>
+</decoder>
+
+<decoder name="ziti-fields">
+  <parent>ziti</parent>
+  <plugin_decoder>JSON_Decoder</plugin_decoder>
+</decoder>
+
+<!-- Ziti Syslog Format -->
+<decoder name="ziti-syslog">
+  <prematch>ziti-controller|ziti-router</prematch>
+  <regex offset="after_prematch">^\[(\S+)\] level=(\S+) (.+)</regex>
+  <order>timestamp,level,message</order>
+</decoder>
+
+<!-- ============================================
+     Unbound DNS Decoder
+     ============================================ -->
+<decoder name="unbound">
+  <prematch>^unbound|info: </prematch>
+</decoder>
+
+<decoder name="unbound-query">
+  <parent>unbound</parent>
+  <prematch>info: </prematch>
+  <regex>info: (\S+) (\S+) (\S+) (\S+)</regex>
+  <order>client_ip,query,type,flags</order>
+</decoder>
+
+<!-- ============================================
+     Squid Proxy Decoder
+     ============================================ -->
+<decoder name="squid">
+  <prematch>^\d{10}\.\d{3}</prematch>
+</decoder>
+
+<decoder name="squid-access">
+  <parent>squid</parent>
+  <regex>^(\d+\.\d+)\s+(\d+)\s+(\S+)\s+(\S+)/(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/(\S+)</regex>
+  <order>timestamp,duration,srcip,status,code,bytes,method,url,user,hierarchy,server</order>
+</decoder>
+
+<!-- OpenSASE Custom Format -->
+<decoder name="squid-opensase">
+  <parent>squid</parent>
+  <prematch>^\d{4}-\d{2}-\d{2}</prematch>
+  <regex>^(\S+ \S+)\s+(\d+)\s+(\S+)\s+(\S+)/(\d+)\s+(\d+)\s+(\S+)\s+(\S+)</regex>
+  <order>timestamp,duration,srcip,status,code,bytes,method,url</order>
+</decoder>
+
+<!-- ============================================
+     Security PoP API Decoder
+     ============================================ -->
+<decoder name="security-pop-api">
+  <prematch>^{"success":|^{"status":</prematch>
+</decoder>
+
+<decoder name="security-pop-api-fields">
+  <parent>security-pop-api</parent>
+  <plugin_decoder>JSON_Decoder</plugin_decoder>
+</decoder>
+
+<!-- ============================================
+     Synthetic Alert Decoder (Demo)
+     ============================================ -->
+<decoder name="opensase-synthetic">
+  <prematch>^OPENSASE-SYNTHETIC-ALERT</prematch>
+  <regex>^OPENSASE-SYNTHETIC-ALERT: type=(\S+) message="([^"]+)"</regex>
+  <order>alert_type,message</order>
+</decoder>
+
+<decoder name="opensase-test">
+  <prematch>^OPENSASE-TEST-EVENT</prematch>
+  <regex>^OPENSASE-TEST-EVENT: (\S+) (.+)</regex>
+  <order>event_type,details</order>
+</decoder>

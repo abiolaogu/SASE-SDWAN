@@ -1,0 +1,28 @@
+[package]
+name = "sase-ite"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Intelligent Traffic Engine - AI-powered traffic optimization"
+
+[dependencies]
+sase-common = { path = "../sase-common" }
+sase-ml = { path = "../sase-ml" }
+
+# Core
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+
+# Async
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+async-trait.workspace = true
+
+# Metrics
+metrics.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true

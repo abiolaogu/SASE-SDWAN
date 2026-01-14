@@ -1,0 +1,80 @@
+# OpenZiti Edge Router Configuration - Branch B
+# Router that hosts app2 service
+
+v: 3
+
+# ============================================
+# Identity
+# ============================================
+identity:
+  cert: /persistent/pki/router-b.cert
+  server_cert: /persistent/pki/router-b.server.cert
+  key: /persistent/pki/router-b.key
+  ca: /persistent/pki/router-b.ca.cert
+
+# ============================================
+# Controller Connection
+# ============================================
+ctrl:
+  endpoint: tls:ziti-controller:6262
+
+# ============================================
+# Link Configuration
+# ============================================
+link:
+  dialers:
+    - binding: transport
+
+  listeners:
+    - binding: transport
+      bind: tls:0.0.0.0:10080
+      advertise: tls:ziti-router-b:10080
+
+# ============================================
+# Edge & Tunnel Listeners
+# ============================================
+listeners:
+  # Edge listener for clients
+  - binding: edge
+    address: tls:0.0.0.0:3022
+    options:
+      advertise: ziti-router-b:3022
+      connectTimeoutMs: 5000
+      getSessionTimeout: 60s
+
+  # Tunnel listener for hosting app2
+  - binding: tunnel
+    options:
+      mode: host
+      resolver: udp://127.0.0.1:53
+
+# ============================================
+# Forwarder
+# ============================================
+forwarder:
+  latencyProbeInterval: 10s
+  xgressDialQueueLength: 1000
+  xgressDialWorkerCount: 128
+  linkDialQueueLength: 1000
+  linkDialWorkerCount: 32
+
+# ============================================
+# CSR
+# ============================================
+csr:
+  country: US
+  province: NC
+  locality: Charlotte
+  organization: OpenSASE Lab
+  organizationalUnit: Branch-B
+  sans:
+    dns:
+      - localhost
+      - ziti-router-b
+    ip:
+      - 127.0.0.1
+      - 10.202.0.10
+
+metrics:
+  reportInterval: 15s
+  messageQueueSize: 10

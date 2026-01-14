@@ -1,0 +1,105 @@
+# Harvester HCI Specific Configurations
+# Reference: https://docs.harvesterhci.io/
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: opensase-data
+  namespace: opensase
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn  # Harvester default storage class
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: opensase-sa
+  namespace: opensase
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: opensase-role
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods", "services", "endpoints"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: opensase-rolebinding
+subjects:
+- kind: ServiceAccount
+  name: opensase-sa
+  namespace: opensase
+roleRef:
+  kind: ClusterRole
+  name: opensase-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Harvester VM Affinity for dedicated SASE nodes
+apiVersion: v1
+kind: Pod
+metadata:
+  name: opensase-node-affinity-example
+  namespace: opensase
+  annotations:
+    # Harvester VM annotations for network interface
+    harvesterhci.io/network-ips: "[]"
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: node-role.kubernetes.io/sase
+            operator: Exists
+  tolerations:
+  - key: "node-role.kubernetes.io/sase"
+    operator: "Exists"
+    effect: "NoSchedule"
+  containers:
+  - name: placeholder
+    image: busybox
+    command: ["sleep", "infinity"]
+
+---
+# Network Policy for SASE isolation
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: opensase-network-policy
+  namespace: opensase
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: opensase
+    - podSelector: {}
+  - from: []
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80
+    - protocol: UDP
+      port: 51820
+  egress:
+  - to: []

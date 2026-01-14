@@ -1,0 +1,49 @@
+# OpenSASE-Lab Custom Suricata Rules
+# These rules are for testing and demonstration purposes
+
+# ========================================
+# Test Rules (for smoke testing)
+# ========================================
+
+# Test alert - triggers on specific HTTP request
+alert http any any -> any any (msg:"OPENSASE-LAB Test Alert - Smoke Test Triggered"; content:"GET"; http_method; content:"/opensase-test"; http_uri; classtype:not-suspicious; sid:9000001; rev:1;)
+
+# Test for NIDS evasion attempts
+alert ip any any -> any any (msg:"OPENSASE-LAB Potential IP Fragmentation Attack"; fragbits:M; classtype:attempted-recon; sid:9000002; rev:1;)
+
+# ========================================
+# Threat Detection Rules
+# ========================================
+
+# Detect potential data exfiltration via DNS
+alert dns any any -> any any (msg:"OPENSASE-LAB Suspicious Long DNS Query - Possible Exfiltration"; dns_query; content:"."; pcre:"/^.{60,}/"; classtype:trojan-activity; sid:9000010; rev:1;)
+
+# Detect TOR traffic
+alert tcp any any -> any any (msg:"OPENSASE-LAB TOR Exit Node Traffic Detected"; flow:established; content:"|16 03|"; depth:2; content:"|00 00|"; distance:3; classtype:policy-violation; sid:9000011; rev:1;)
+
+# Detect cryptocurrency mining
+alert http any any -> any any (msg:"OPENSASE-LAB Cryptocurrency Mining Pool Connection"; content:"stratum+tcp://"; classtype:policy-violation; sid:9000012; rev:1;)
+alert http any any -> any any (msg:"OPENSASE-LAB Coinhive Mining Script Detected"; content:"coinhive.min.js"; classtype:policy-violation; sid:9000013; rev:1;)
+
+# ========================================
+# Policy Enforcement Rules
+# ========================================
+
+# Block known malicious user agents
+alert http any any -> any any (msg:"OPENSASE-LAB Blocked User Agent - Common Malware"; http_user_agent; content:"bot"; nocase; classtype:trojan-activity; sid:9000020; rev:1;)
+
+# Detect potential SQL injection attempts
+alert http any any -> any any (msg:"OPENSASE-LAB SQL Injection Attempt Detected"; http_uri; content:"UNION"; nocase; content:"SELECT"; nocase; classtype:web-application-attack; sid:9000021; rev:1;)
+
+# Detect potential XSS attempts
+alert http any any -> any any (msg:"OPENSASE-LAB XSS Attempt Detected"; http_uri; content:"<script"; nocase; classtype:web-application-attack; sid:9000022; rev:1;)
+
+# ========================================
+# Compliance Monitoring Rules
+# ========================================
+
+# Detect unencrypted sensitive data patterns (credit card-like)
+alert tcp any any -> any any (msg:"OPENSASE-LAB Potential Credit Card Number in Clear Text"; content:"|34|"; pcre:"/\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\b/"; classtype:policy-violation; sid:9000030; rev:1;)
+
+# Detect potential password in URL
+alert http any any -> any any (msg:"OPENSASE-LAB Password in URL Query String"; http_uri; content:"password="; nocase; classtype:policy-violation; sid:9000031; rev:1;)

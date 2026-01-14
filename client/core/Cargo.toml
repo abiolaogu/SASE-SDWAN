@@ -1,0 +1,54 @@
+[package]
+name = "opensase-client"
+version = "0.1.0"
+edition = "2021"
+description = "OpenSASE Cross-Platform Edge Client Core"
+
+[lib]
+name = "opensase_client"
+path = "src/lib.rs"
+
+[[bin]]
+name = "opensase-client"
+path = "src/main.rs"
+
+[features]
+default = []
+windows = ["dep:windows"]
+macos = []
+linux = []
+
+[dependencies]
+# Core
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Crypto
+base64 = "0.21"
+x25519-dalek = "2"
+rand = "0.8"
+
+# Networking
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+
+# System
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+parking_lot = "0.12"
+
+# Platform-specific
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.52", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Services", "Win32_NetworkManagement_IpHelper"], optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# macOS-specific dependencies added here
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Linux-specific dependencies added here
+
+[dev-dependencies]
+tokio-test = "0.4"

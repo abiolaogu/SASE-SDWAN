@@ -1,0 +1,70 @@
+# OpenSASE-Lab Lite Profile
+# Reduced resource consumption for 8GB systems
+# Usage: docker compose -f docker-compose.yml -f docker-compose.lite.yml up -d
+
+services:
+  # Reduce Wazuh Indexer resources
+  wazuh-indexer:
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1'
+
+  # Reduce Wazuh Manager resources
+  wazuh-manager:
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+
+  # Reduce Prometheus retention
+  prometheus:
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=1d'
+      - '--web.enable-lifecycle'
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  # Reduce Grafana resources
+  grafana:
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+
+  # Reduce Keycloak resources
+  keycloak:
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:-changeme_kcdb}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-changeme_keycloak}
+      KC_HOSTNAME: localhost
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY: edge
+      JAVA_OPTS: "-Xms256m -Xmx512m"
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+          cpus: '1'
+
+  # Reduce FlexiWAN Controller resources
+  flexiwan-controller:
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'

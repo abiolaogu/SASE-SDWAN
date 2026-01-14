@@ -1,0 +1,127 @@
+# OpenZiti Controller Configuration
+# Comprehensive controller setup for ZTNA
+
+v: 3
+
+# Database location
+db: /persistent/ctrl.db
+
+# ============================================
+# Controller Identity
+# ============================================
+identity:
+  cert: /persistent/pki/ctrl.cert
+  server_cert: /persistent/pki/ctrl.server.cert
+  key: /persistent/pki/ctrl.key
+  ca: /persistent/pki/ctrl.ca.cert
+
+# ============================================
+# Control Plane (Router Communication)
+# ============================================
+ctrl:
+  listener: tls:0.0.0.0:6262
+  options:
+    advertise: ziti-controller:6262
+
+# ============================================
+# Edge API (Management & Client)
+# ============================================
+edge:
+  # Signing certificates for enrollment
+  enrollment:
+    signingCert:
+      cert: /persistent/pki/signing.cert
+      key: /persistent/pki/signing.key
+    edgeIdentity:
+      duration: 180m
+    edgeRouter:
+      duration: 180m
+  
+  # API configuration
+  api:
+    sessionTimeout: 30m
+    address: ziti-controller:1280
+
+# ============================================
+# Web APIs (All-in-one binding)
+# ============================================
+web:
+  - name: all-apis-localhost
+    bindPoints:
+      - interface: 0.0.0.0:1280
+        address: ziti-controller:1280
+    
+    # Identity source for web session
+    identity:
+      ca: /persistent/pki/ctrl.ca.cert
+      key: /persistent/pki/ctrl.key
+      server_cert: /persistent/pki/ctrl.server.cert
+      cert: /persistent/pki/ctrl.cert
+    
+    # Options for TLS
+    options:
+      idleTimeout: 5000ms
+      readTimeout: 5000ms
+      writeTimeout: 100000ms
+      minTLSVersion: TLS1.2
+      maxTLSVersion: TLS1.3
+    
+    # API bindings
+    apis:
+      - binding: edge-management
+        options: {}
+      - binding: edge-client
+        options: {}
+      - binding: fabric
+        options: {}
+      - binding: health-checks
+        options: {}
+
+# ============================================
+# Health Checks
+# ============================================
+healthChecks:
+  boltCheck:
+    interval: 30s
+    timeout: 20s
+    initialDelay: 30s
+
+# ============================================
+# Events (for logging/monitoring)
+# ============================================
+events:
+  jsonLogger:
+    subscriptions:
+      - type: fabric.circuits
+      - type: fabric.links
+      - type: fabric.routers
+      - type: fabric.terminators
+      - type: metrics
+        sourceFilter: .*
+        metricFilter: .*
+      - type: edge.sessions
+      - type: edge.apiSessions
+      - type: services
+      - type: edge.entityCounts
+        interval: 5s
+    handler:
+      type: file
+      format: json
+      path: /persistent/logs/events.json
+
+# ============================================
+# Raft (Single-node for lab)
+# ============================================
+raft:
+  dataDir: /persistent/raft
+  minClusterSize: 1
+
+# ============================================
+# Profile (for debugging)
+# ============================================
+profile:
+  memory:
+    path: /persistent/profile/ctrl.memprof
+    interval: 30s
+  cpu:
+    path: /persistent/profile/ctrl.cpuprof

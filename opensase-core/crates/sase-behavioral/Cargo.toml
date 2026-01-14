@@ -1,0 +1,17 @@
+[package]
+name = "sase-behavioral"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "User and Entity Behavior Analytics"
+
+[dependencies]
+sase-common = { path = "../sase-common" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true

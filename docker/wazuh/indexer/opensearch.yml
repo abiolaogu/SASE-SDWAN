@@ -1,0 +1,20 @@
+cluster.name: wazuh-indexer
+node.name: wazuh-indexer-node1
+network.host: 0.0.0.0
+http.port: 9200
+
+# Discovery settings (single node)
+discovery.type: single-node
+
+# Security settings (disabled for lab simplicity)
+plugins.security.disabled: true
+
+# Path settings
+path.data: /var/lib/wazuh-indexer
+path.logs: /var/log/wazuh-indexer
+
+# Memory settings
+bootstrap.memory_lock: true
+
+# Compatibility
+compatibility.override_main_response_version: true

@@ -1,0 +1,236 @@
+{
+    "title": "OpenSASE-Lab Overview",
+    "description": "Unified security visibility for SASE components",
+    "version": 1,
+    "timeFrom": "now-24h",
+    "timeTo": "now",
+    "refreshInterval": {
+        "value": 30,
+        "pause": false
+    },
+    "panels": [
+        {
+            "id": "alerts-total",
+            "type": "metric",
+            "title": "Total Alerts (24h)",
+            "gridData": {
+                "x": 0,
+                "y": 0,
+                "w": 8,
+                "h": 4
+            },
+            "query": {
+                "index": "wazuh-alerts-*",
+                "field": "_id",
+                "aggregation": "count"
+            }
+        },
+        {
+            "id": "alerts-critical",
+            "type": "metric",
+            "title": "Critical Alerts",
+            "gridData": {
+                "x": 8,
+                "y": 0,
+                "w": 8,
+                "h": 4
+            },
+            "query": {
+                "index": "wazuh-alerts-*",
+                "filter": "rule.level >= 10",
+                "field": "_id",
+                "aggregation": "count"
+            },
+            "color": "#ff4d4f"
+        },
+        {
+            "id": "alerts-medium",
+            "type": "metric",
+            "title": "Medium Alerts",
+            "gridData": {
+                "x": 16,
+                "y": 0,
+                "w": 8,
+                "h": 4
+            },
+            "query": {
+                "index": "wazuh-alerts-*",
+                "filter": "rule.level >= 6 AND rule.level < 10",
+                "field": "_id",
+                "aggregation": "count"
+            },
+            "color": "#faad14"
+        },
+        {
+            "id": "alerts-trend",
+            "type": "line",
+            "title": "Alert Trend",
+            "gridData": {
+                "x": 0,
+                "y": 4,
+                "w": 16,
+                "h": 6
+            },
+            "query": {
+                "index": "wazuh-alerts-*",
+                "aggregation": "date_histogram",
+                "interval": "1h"
+            }
+        },
+        {
+            "id": "alerts-by-source",
+            "type": "pie",
+            "title": "Alerts by Source",
+            "gridData": {
+                "x": 16,
+                "y": 4,
+                "w": 8,
+                "h": 6
+            },
+            "query": {
+                "index": "wazuh-alerts-*",
+                "aggregation": "terms",
+                "field": "data.log_type"
+            }
+        },
+        {
+            "id": "top-rules",
+            "type": "table",
+            "title": "Top Triggered Rules",
+            "gridData": {
+                "x": 0,
+                "y": 10,
+                "w": 12,
+                "h": 6
+            },
+            "query": {
+                "index": "wazuh-alerts-*",
+                "aggregation": "terms",
+                "field": "rule.description",
+                "size": 10
+            },
+            "columns": [
+                "Rule",
+                "Count"
+            ]
+        },
+        {
+            "id": "suricata-alerts",
+            "type": "table",
+            "title": "Recent Suricata Alerts",
+            "gridData": {
+                "x": 12,
+                "y": 10,
+                "w": 12,
+                "h": 6
+            },
+            "query": {
+                "index": "wazuh-alerts-*",
+                "filter": "rule.groups: suricata",
+                "sort": "@timestamp:desc",
+                "size": 10
+            },
+            "columns": [
+                "Time",
+                "Signature",
+                "Source IP",
+                "Dest IP"
+            ]
+        },
+        {
+            "id": "sdwan-events",
+            "type": "table",
+            "title": "SD-WAN Events",
+            "gridData": {
+                "x": 0,
+                "y": 16,
+                "w": 12,
+                "h": 6
+            },
+            "query": {
+                "index": "wazuh-alerts-*",
+                "filter": "rule.groups: flexiwan OR rule.groups: sdwan",
+                "sort": "@timestamp:desc",
+                "size": 10
+            },
+            "columns": [
+                "Time",
+                "Event",
+                "Device"
+            ]
+        },
+        {
+            "id": "ztna-sessions",
+            "type": "table",
+            "title": "ZTNA Sessions",
+            "gridData": {
+                "x": 12,
+                "y": 16,
+                "w": 12,
+                "h": 6
+            },
+            "query": {
+                "index": "wazuh-alerts-*",
+                "filter": "rule.groups: ziti OR rule.groups: ztna",
+                "sort": "@timestamp:desc",
+                "size": 10
+            },
+            "columns": [
+                "Time",
+                "Identity",
+                "Service",
+                "Action"
+            ]
+        },
+        {
+            "id": "alerts-severity",
+            "type": "bar",
+            "title": "Alerts by Severity Level",
+            "gridData": {
+                "x": 0,
+                "y": 22,
+                "w": 12,
+                "h": 5
+            },
+            "query": {
+                "index": "wazuh-alerts-*",
+                "aggregation": "terms",
+                "field": "rule.level"
+            }
+        },
+        {
+            "id": "top-source-ips",
+            "type": "table",
+            "title": "Top Source IPs",
+            "gridData": {
+                "x": 12,
+                "y": 22,
+                "w": 12,
+                "h": 5
+            },
+            "query": {
+                "index": "wazuh-alerts-*",
+                "aggregation": "terms",
+                "field": "data.srcip",
+                "size": 10
+            },
+            "columns": [
+                "Source IP",
+                "Count"
+            ]
+        }
+    ],
+    "filters": [
+        {
+            "field": "rule.groups",
+            "values": [
+                "opensase",
+                "suricata",
+                "flexiwan",
+                "ziti",
+                "dns",
+                "proxy"
+            ]
+        }
+    ]
+}

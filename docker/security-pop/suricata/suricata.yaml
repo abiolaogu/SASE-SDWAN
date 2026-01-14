@@ -1,0 +1,325 @@
+# Suricata IPS Configuration - Performance Optimized
+# OpenSASE-Lab Security PoP
+
+%YAML 1.1
+---
+
+# ============================================
+# Global Settings
+# ============================================
+vars:
+  address-groups:
+    HOME_NET: "[10.200.0.0/24,10.201.0.0/24,10.202.0.0/24,10.203.0.0/24,10.210.0.0/24]"
+    EXTERNAL_NET: "!$HOME_NET"
+    HTTP_SERVERS: "$HOME_NET"
+    SMTP_SERVERS: "$HOME_NET"
+    SQL_SERVERS: "$HOME_NET"
+    DNS_SERVERS: "$HOME_NET"
+    TELNET_SERVERS: "$HOME_NET"
+    AIM_SERVERS: "$EXTERNAL_NET"
+    DC_SERVERS: "$HOME_NET"
+    DNP3_SERVER: "$HOME_NET"
+    DNP3_CLIENT: "$HOME_NET"
+    MODBUS_CLIENT: "$HOME_NET"
+    MODBUS_SERVER: "$HOME_NET"
+    ENIP_CLIENT: "$HOME_NET"
+    ENIP_SERVER: "$HOME_NET"
+
+  port-groups:
+    HTTP_PORTS: "80"
+    SHELLCODE_PORTS: "!80"
+    ORACLE_PORTS: 1521
+    SSH_PORTS: 22
+    DNP3_PORTS: 20000
+    MODBUS_PORTS: 502
+    FILE_DATA_PORTS: "[$HTTP_PORTS,110,143]"
+    FTP_PORTS: 21
+    GENEVE_PORTS: 6081
+    VXLAN_PORTS: 4789
+    TEREDO_PORTS: 3544
+
+# ============================================
+# Threading & Performance
+# ============================================
+threading:
+  set-cpu-affinity: yes
+  # Pin to first 2 CPUs for consistent performance
+  cpu-affinity:
+    - management-cpu-set:
+        cpu: [0]
+    - receive-cpu-set:
+        cpu: [0]
+    - worker-cpu-set:
+        cpu: [1]
+        mode: "exclusive"
+
+# Runmode: workers for IPS performance
+runmode: workers
+
+# ============================================
+# Capture Settings (IPS mode)
+# ============================================
+af-packet:
+  - interface: eth0
+    threads: auto
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmap: yes
+    tpacket-v3: yes
+    ring-size: 2048
+    block-size: 32768
+    block-timeout: 10
+    # IPS mode - inline
+    copy-mode: ips
+    copy-iface: eth0
+    buffer-size: 64mb
+    checksum-checks: kernel
+    bpf-filter: not port 22 and not port 8080
+
+# Fallback pcap settings
+pcap:
+  - interface: eth0
+    buffer-size: 64mb
+    bpf-filter: not port 22 and not port 8080
+
+# ============================================
+# IPS Mode Settings
+# ============================================
+# Action order (how Suricata handles matched rules)
+action-order:
+  - pass
+  - drop
+  - reject
+  - alert
+
+# Default packet action
+default-packet-action: pass
+
+# ============================================
+# Memory Management
+# ============================================
+max-pending-packets: 4096
+
+default-log-dir: /var/log/suricata/
+
+# Memory caps for flow, defrag, and stream
+flow:
+  memcap: 64mb
+  hash-size: 65536
+  prealloc: 10000
+  emergency-recovery: 30
+
+defrag:
+  memcap: 32mb
+  hash-size: 65536
+  trackers: 65535
+
+stream:
+  memcap: 128mb
+  reassembly:
+    memcap: 256mb
+    depth: 1mb
+    toserver-chunk-size: 2560
+    toclient-chunk-size: 2560
+
+# ============================================
+# Detection Engine
+# ============================================
+detect:
+  profile: medium
+  custom-values:
+    toclient-groups: 3
+    toserver-groups: 25
+  sgh-mpm-context: auto
+  inspection-recursion-limit: 3000
+
+# Multi-pattern matching algorithm
+mpm-algo: hs
+
+# Pattern matcher settings
+spm-algo: hs
+
+# ============================================
+# Outputs
+# ============================================
+outputs:
+  # EVE JSON log (for Wazuh ingestion)
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      rotate-interval: hour
+      pcap-file: false
+      community-id: true
+      community-id-seed: 0
+
+      types:
+        - alert:
+            tagged-packets: yes
+            payload: yes
+            payload-printable: yes
+            http-body: yes
+            http-body-printable: yes
+            packet: yes
+            metadata: yes
+            xff:
+              enabled: yes
+              mode: extra-data
+              deployment: reverse
+              header: X-Forwarded-For
+
+        - anomaly:
+            enabled: yes
+            types:
+              decode: yes
+              stream: yes
+              applayer: yes
+
+        - http:
+            extended: yes
+
+        - dns:
+            enabled: yes
+
+        - tls:
+            extended: yes
+
+        - files:
+            force-magic: yes
+            force-hash: [md5, sha256]
+
+        - smtp:
+            extended: yes
+
+        - ssh
+
+        - stats:
+            totals: yes
+            threads: yes
+            deltas: yes
+
+        - flow
+
+  # Fast log for quick alert viewing
+  - fast:
+      enabled: yes
+      filename: fast.log
+      append: yes
+
+  # Stats for Prometheus metrics
+  - stats:
+      enabled: yes
+      filename: stats.log
+      append: yes
+      totals: yes
+      threads: yes
+
+  # Packet capture (disabled by default)
+  - pcap-log:
+      enabled: no
+      filename: log.pcap
+      limit: 100mb
+      max-files: 10
+      compression: none
+      mode: normal
+      use-stream-depth: no
+
+# ============================================
+# Logging
+# ============================================
+logging:
+  default-log-level: notice
+  default-output-filter:
+  outputs:
+    - console:
+        enabled: yes
+    - file:
+        enabled: yes
+        level: info
+        filename: suricata.log
+    - syslog:
+        enabled: no
+        facility: local5
+        format: "[%i] <%d> -- "
+
+# ============================================
+# Rule Files
+# ============================================
+default-rule-path: /var/lib/suricata/rules
+
+rule-files:
+  - suricata.rules
+  - /etc/suricata/rules/custom.rules
+  - /etc/suricata/rules/safe-demo.rules
+
+# Classification file
+classification-file: /var/lib/suricata/rules/classification.config
+reference-config-file: /var/lib/suricata/rules/reference.config
+
+# ============================================
+# Application Layer Protocols
+# ============================================
+app-layer:
+  protocols:
+    # HTTP protocol detection
+    http:
+      enabled: yes
+      libhtp:
+        default-config:
+          personality: IDS
+          request-body-limit: 100kb
+          response-body-limit: 100kb
+          request-body-minimal-inspect-size: 32kb
+          request-body-inspect-window: 4kb
+          response-body-minimal-inspect-size: 40kb
+          response-body-inspect-window: 16kb
+          response-body-decompress-layer-limit: 2
+          http-body-inline: auto
+
+    # TLS/SSL
+    tls:
+      enabled: yes
+      detection-ports:
+        dp: 443
+
+    # SSH
+    ssh:
+      enabled: yes
+
+    # SMTP
+    smtp:
+      enabled: yes
+      raw-extraction: no
+      decode-base64: yes
+      decode-quoted-printable: yes
+
+    # DNS
+    dns:
+      enabled: yes
+      tcp:
+        enabled: yes
+      udp:
+        enabled: yes
+
+    # SMB
+    smb:
+      enabled: yes
+      detection-ports:
+        dp: 139, 445
+
+    # DCERPC
+    dcerpc:
+      enabled: yes
+
+    # FTP
+    ftp:
+      enabled: yes
+
+    # RDP
+    rdp:
+      enabled: yes
+
+    # DHCP
+    dhcp:
+      enabled: yes

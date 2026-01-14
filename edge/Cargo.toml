@@ -1,0 +1,38 @@
+[package]
+name = "opensase-edge"
+version = "0.1.0"
+edition = "2021"
+description = "OpenSASE Edge - Site Edge Appliance"
+
+[[bin]]
+name = "opensase-edge"
+path = "src/main.rs"
+
+[dependencies]
+# Core
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Networking
+ipnetwork = "0.20"
+
+# Crypto
+base64 = "0.21"
+x25519-dalek = "2"
+rand = "0.8"
+
+# Web server (for local API)
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# System
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+parking_lot = "0.12"
+
+[dev-dependencies]
+tokio-test = "0.4"

@@ -1,0 +1,26 @@
+[package]
+name = "sase-tenant"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Multi-Tenant Isolation Framework - Enterprise multi-tenancy"
+
+[dependencies]
+sase-common = { path = "../sase-common" }
+
+# Core
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+
+# Crypto
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Async
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+
+[dev-dependencies]
+tokio-test.workspace = true

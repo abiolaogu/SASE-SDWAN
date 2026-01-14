@@ -1,0 +1,212 @@
+{
+    "realm": "opensase-lab",
+    "enabled": true,
+    "displayName": "OpenSASE Lab",
+    "sslRequired": "none",
+    "registrationAllowed": false,
+    "loginWithEmailAllowed": true,
+    "duplicateEmailsAllowed": false,
+    "resetPasswordAllowed": true,
+    "editUsernameAllowed": false,
+    "bruteForceProtected": true,
+    "roles": {
+        "realm": [
+            {
+                "name": "admin",
+                "description": "Full administrative access"
+            },
+            {
+                "name": "operator",
+                "description": "Operational access - view and manage"
+            },
+            {
+                "name": "viewer",
+                "description": "Read-only access"
+            }
+        ]
+    },
+    "groups": [
+        {
+            "name": "Administrators",
+            "realmRoles": [
+                "admin"
+            ]
+        },
+        {
+            "name": "Operators",
+            "realmRoles": [
+                "operator"
+            ]
+        },
+        {
+            "name": "Viewers",
+            "realmRoles": [
+                "viewer"
+            ]
+        }
+    ],
+    "users": [
+        {
+            "username": "admin",
+            "email": "admin@opensase.lab",
+            "enabled": true,
+            "emailVerified": true,
+            "firstName": "Lab",
+            "lastName": "Admin",
+            "groups": [
+                "Administrators"
+            ],
+            "credentials": [
+                {
+                    "type": "password",
+                    "value": "admin123",
+                    "temporary": true
+                }
+            ]
+        },
+        {
+            "username": "operator",
+            "email": "operator@opensase.lab",
+            "enabled": true,
+            "emailVerified": true,
+            "firstName": "Lab",
+            "lastName": "Operator",
+            "groups": [
+                "Operators"
+            ],
+            "credentials": [
+                {
+                    "type": "password",
+                    "value": "operator123",
+                    "temporary": true
+                }
+            ]
+        },
+        {
+            "username": "viewer",
+            "email": "viewer@opensase.lab",
+            "enabled": true,
+            "emailVerified": true,
+            "firstName": "Lab",
+            "lastName": "Viewer",
+            "groups": [
+                "Viewers"
+            ],
+            "credentials": [
+                {
+                    "type": "password",
+                    "value": "viewer123",
+                    "temporary": true
+                }
+            ]
+        }
+    ],
+    "clients": [
+        {
+            "clientId": "portal-app",
+            "name": "OpenSASE Portal",
+            "enabled": true,
+            "publicClient": false,
+            "secret": "portal-secret-change-me",
+            "redirectUris": [
+                "http://localhost:8080/*",
+                "http://127.0.0.1:8080/*"
+            ],
+            "webOrigins": [
+                "http://localhost:8080",
+                "http://127.0.0.1:8080"
+            ],
+            "protocol": "openid-connect",
+            "standardFlowEnabled": true,
+            "directAccessGrantsEnabled": true,
+            "serviceAccountsEnabled": false,
+            "authorizationServicesEnabled": false,
+            "fullScopeAllowed": true,
+            "defaultClientScopes": [
+                "openid",
+                "profile",
+                "email",
+                "roles"
+            ]
+        },
+        {
+            "clientId": "grafana",
+            "name": "Grafana",
+            "enabled": true,
+            "publicClient": false,
+            "secret": "grafana-secret-change-me",
+            "redirectUris": [
+                "http://localhost:3001/*",
+                "http://127.0.0.1:3001/*"
+            ],
+            "webOrigins": [
+                "http://localhost:3001",
+                "http://127.0.0.1:3001"
+            ],
+            "protocol": "openid-connect",
+            "standardFlowEnabled": true,
+            "directAccessGrantsEnabled": false,
+            "fullScopeAllowed": true,
+            "defaultClientScopes": [
+                "openid",
+                "profile",
+                "email"
+            ]
+        },
+        {
+            "clientId": "ziti-console",
+            "name": "OpenZiti Console",
+            "enabled": true,
+            "publicClient": true,
+            "redirectUris": [
+                "http://localhost:1408/*"
+            ],
+            "webOrigins": [
+                "http://localhost:1408"
+            ],
+            "protocol": "openid-connect",
+            "standardFlowEnabled": true,
+            "directAccessGrantsEnabled": false,
+            "fullScopeAllowed": true,
+            "defaultClientScopes": [
+                "openid",
+                "profile",
+                "email"
+            ]
+        }
+    ],
+    "clientScopes": [
+        {
+            "name": "roles",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "false"
+            },
+            "protocolMappers": [
+                {
+                    "name": "realm roles",
+                    "protocol": "openid-connect",
+                    "protocolMapper": "oidc-usermodel-realm-role-mapper",
+                    "consentRequired": false,
+                    "config": {
+                        "multivalued": "true",
+                        "userinfo.token.claim": "true",
+                        "id.token.claim": "true",
+                        "access.token.claim": "true",
+                        "claim.name": "roles",
+                        "jsonType.label": "String"
+                    }
+                }
+            ]
+        }
+    ],
+    "browserSecurityHeaders": {
+        "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
+        "xContentTypeOptions": "nosniff",
+        "xRobotsTag": "none",
+        "xFrameOptions": "SAMEORIGIN",
+        "xXSSProtection": "1; mode=block",
+        "strictTransportSecurity": "max-age=31536000; includeSubDomains"
+    }
+}

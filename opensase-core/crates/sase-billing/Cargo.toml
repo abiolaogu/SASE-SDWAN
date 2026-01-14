@@ -1,0 +1,22 @@
+[package]
+name = "sase-billing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenSASE Revenue Platform - Metering, Pricing, Billing"
+
+[dependencies]
+sase-common = { path = "../sase-common" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+chrono.workspace = true
+uuid.workspace = true
+rust_decimal = { version = "1", features = ["serde"] }
+rust_decimal_macros = "1"
+
+[dev-dependencies]
+tokio-test.workspace = true

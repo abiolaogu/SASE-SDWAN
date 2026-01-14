@@ -1,0 +1,22 @@
+[package]
+name = "sase-compliance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenSASE Compliance Engine"
+
+[dependencies]
+sase-common = { path = "../sase-common" }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+chrono.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+hex.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true

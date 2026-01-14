@@ -1,0 +1,111 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sase-common",
+    "crates/sase-policy",
+    "crates/sase-path",
+    "crates/sase-dlp",
+    "crates/sase-casb",
+    "crates/sase-xdp",
+    "crates/sase-ml",
+    "crates/sase-behavioral",
+    "crates/sase-gateway",
+    "crates/sase-dataplane",
+    "crates/sase-usie",
+    "crates/sase-orchestrator",
+    "crates/sase-ite",
+    "crates/sase-tenant",
+    "crates/sase-fpe",
+    "crates/sase-compliance",
+    "crates/sase-backbone",
+    "crates/sase-billing",
+    "crates/sase-resilience",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/opensase/opensase-core"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+
+# High-performance data structures
+dashmap = "5.5"
+arc-swap = "1.6"
+crossbeam = "0.8"
+parking_lot = "0.12"
+moka = { version = "0.12", features = ["future"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Lock-free structures
+flurry = "0.5"
+evmap = "10.0"
+
+# Serialization (SIMD-accelerated)
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+simd-json = "0.13"
+rkyv = { version = "0.7", features = ["validation"] }
+
+# Pattern matching
+aho-corasick = "1.1"
+regex = "1.10"
+memchr = "2.7"
+
+# Networking
+bytes = "1.5"
+socket2 = "0.5"
+
+# eBPF
+aya = "0.12"
+aya-bpf = "0.1"
+libbpf-rs = "0.22"
+
+# ML inference
+ort = "2.0"  # ONNX Runtime
+candle-core = "0.3"
+
+# Metrics & tracing
+tracing = "0.1"
+tracing-subscriber = "0.3"
+metrics = "0.22"
+metrics-exporter-prometheus = "0.13"
+
+# HTTP/gRPC
+axum = "0.7"
+tonic = "0.11"
+tower = "0.4"
+hyper = { version = "1.1", features = ["full"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Crypto/hashing
+sha2 = "0.10"
+hex = "0.4"
+rand = "0.8"
+
+# Networking extras
+ipnetwork = "0.20"
+
+# Testing & benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1.4"
+tokio-test = "0.4"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = 3
+
+[profile.bench]
+lto = "thin"
+debug = true

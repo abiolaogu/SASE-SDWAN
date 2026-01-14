@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: 'OpenSASE-Lab Dashboards'
+    orgId: 1
+    folder: 'OpenSASE-Lab'
+    folderUid: 'opensase-lab'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

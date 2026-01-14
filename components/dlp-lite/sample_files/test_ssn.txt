@@ -1,0 +1,10 @@
+# FAKE DATA - FOR TESTING ONLY
+# These SSNs are intentionally invalid (area 000 is not used)
+
+Employee Records (FAKE):
+- John Doe: 000-12-3456
+- Jane Smith: 000-45-6789  
+- Bob Johnson: 000-78-9012
+
+Note: All SSNs starting with 000 are invalid and not assigned.
+This file is for DLP testing purposes only.

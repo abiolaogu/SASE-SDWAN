@@ -1,0 +1,31 @@
+[package]
+name = "sase-usie"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Unified Security Inspection Engine - Single-pass packet inspection"
+
+[dependencies]
+sase-common = { path = "../sase-common" }
+sase-dlp = { path = "../sase-dlp" }
+
+# Core
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+
+# Pattern matching
+aho-corasick.workspace = true
+regex.workspace = true
+memchr.workspace = true
+
+# Async
+tokio = { workspace = true, features = ["rt", "sync"] }
+
+# Metrics
+metrics.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true

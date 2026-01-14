@@ -1,0 +1,574 @@
+# OpenSASE-Lab Docker Compose
+# Fully reproducible SASE security lab
+# Usage: make up | make lite | make down
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "100m"
+    max-file: "3"
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 60s
+
+networks:
+  # Security PoP / Hub network
+  pop-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.200.0.0/24
+  
+  # Branch networks (isolated)
+  branch-a-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.201.0.0/24
+  
+  branch-b-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.202.0.0/24
+  
+  branch-c-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.203.0.0/24
+  
+  # OpenZiti overlay fabric
+  ziti-fabric:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.210.0.0/24
+  
+  # Management network (internal only)
+  mgmt-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  flexiwan-mongo-data:
+  keycloak-db-data:
+  wazuh-indexer-data:
+  wazuh-manager-data:
+  prometheus-data:
+  grafana-data:
+  ziti-controller-data:
+
+services:
+  # ============================================
+  # FlexiWAN SD-WAN Controller
+  # ============================================
+  flexiwan-mongo:
+    image: mongo:6
+    container_name: flexiwan-mongo
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: flexiwan
+      MONGO_INITDB_ROOT_PASSWORD: ${FLEXIWAN_MONGODB_PASSWORD:-changeme_mongo}
+    volumes:
+      - flexiwan-mongo-data:/data/db
+    networks:
+      - mgmt-net
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+
+  flexiwan-controller:
+    image: flexiwan/flexiwan:latest
+    container_name: flexiwan-controller
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      flexiwan-mongo:
+        condition: service_healthy
+    environment:
+      MONGO_HOST: flexiwan-mongo
+      MONGO_PORT: 27017
+      MONGO_USER: flexiwan
+      MONGO_PASSWORD: ${FLEXIWAN_MONGODB_PASSWORD:-changeme_mongo}
+      MONGO_DATABASE: flexiwan
+      ADMIN_EMAIL: ${FLEXIWAN_ADMIN_EMAIL:-admin@opensase.lab}
+      ADMIN_PASSWORD: ${FLEXIWAN_ADMIN_PASSWORD:-changeme_flexiwan}
+      LOG_LEVEL: ${FLEXIWAN_LOG_LEVEL:-info}
+    ports:
+      - "3000:3000"   # Web UI
+      - "4433:4433"   # Device management
+    networks:
+      - pop-net
+      - mgmt-net
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+
+  # ============================================
+  # FlexiWAN Edge Routers (Branches)
+  # ============================================
+  branch-a:
+    image: flexiwan/flexiwan-router:latest
+    container_name: branch-a
+    restart: unless-stopped
+    logging: *default-logging
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      FLEXIWAN_CONTROLLER: https://flexiwan-controller:4433
+      DEVICE_TOKEN: ${BRANCH_A_TOKEN:-auto}
+      DEVICE_NAME: branch-a
+    volumes:
+      - ./docker/flexiwan-edge/branch-a:/etc/flexiwan:ro
+    networks:
+      pop-net:
+        ipv4_address: 10.200.0.11
+      branch-a-net:
+        ipv4_address: 10.201.0.1
+    depends_on:
+      - flexiwan-controller
+
+  branch-b:
+    image: flexiwan/flexiwan-router:latest
+    container_name: branch-b
+    restart: unless-stopped
+    logging: *default-logging
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      FLEXIWAN_CONTROLLER: https://flexiwan-controller:4433
+      DEVICE_TOKEN: ${BRANCH_B_TOKEN:-auto}
+      DEVICE_NAME: branch-b
+    volumes:
+      - ./docker/flexiwan-edge/branch-b:/etc/flexiwan:ro
+    networks:
+      pop-net:
+        ipv4_address: 10.200.0.12
+      branch-b-net:
+        ipv4_address: 10.202.0.1
+    depends_on:
+      - flexiwan-controller
+
+  branch-c:
+    image: flexiwan/flexiwan-router:latest
+    container_name: branch-c
+    restart: unless-stopped
+    logging: *default-logging
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      FLEXIWAN_CONTROLLER: https://flexiwan-controller:4433
+      DEVICE_TOKEN: ${BRANCH_C_TOKEN:-auto}
+      DEVICE_NAME: branch-c
+    volumes:
+      - ./docker/flexiwan-edge/branch-c:/etc/flexiwan:ro
+    networks:
+      pop-net:
+        ipv4_address: 10.200.0.13
+      branch-c-net:
+        ipv4_address: 10.203.0.1
+    depends_on:
+      - flexiwan-controller
+
+  # ============================================
+  # Security PoP Gateway (OPNsense Substitute)
+  # ============================================
+  security-pop:
+    build:
+      context: ./docker/security-pop
+      dockerfile: Dockerfile
+    container_name: security-pop
+    restart: unless-stopped
+    logging: *default-logging
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.core.rmem_max=26214400
+      - net.core.wmem_max=26214400
+    volumes:
+      - ./docker/security-pop/suricata:/etc/suricata:ro
+      - ./docker/security-pop/unbound:/etc/unbound:ro
+      - /var/log/suricata:/var/log/suricata
+    networks:
+      pop-net:
+        ipv4_address: 10.200.0.1
+      mgmt-net:
+    ports:
+      - "8081:8080"  # Security API
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "suricatasc", "-c", "iface-stat"]
+
+  # ============================================
+  # OpenZiti ZTNA Controller
+  # ============================================
+  ziti-controller:
+    image: openziti/ziti-controller:latest
+    container_name: ziti-controller
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      ZITI_CTRL_ADVERTISED_ADDRESS: ${ZITI_CTRL_ADVERTISED_ADDRESS:-ziti-controller}
+      ZITI_CTRL_ADVERTISED_PORT: ${ZITI_CTRL_ADVERTISED_PORT:-1280}
+      ZITI_PWD: ${ZITI_PWD:-changeme_ziti}
+    volumes:
+      - ziti-controller-data:/persistent
+      - ./docker/openziti-controller:/openziti
+    networks:
+      ziti-fabric:
+        ipv4_address: 10.210.0.1
+      mgmt-net:
+    ports:
+      - "1280:1280"  # Control plane
+    command: ["run", "/openziti/controller.yaml"]
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:1280/edge/v1/version"]
+
+  ziti-router-pop:
+    image: openziti/ziti-router:latest
+    container_name: ziti-router-pop
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      ziti-controller:
+        condition: service_healthy
+    environment:
+      ZITI_CTRL_ADVERTISED_ADDRESS: ziti-controller
+      ZITI_ROUTER_NAME: router-pop
+    volumes:
+      - ./docker/openziti-router/pop:/openziti
+    networks:
+      ziti-fabric:
+        ipv4_address: 10.210.0.10
+      pop-net:
+    ports:
+      - "3022:3022"  # Edge listener
+    command: ["run", "/openziti/router.yaml"]
+
+  ziti-router-a:
+    image: openziti/ziti-router:latest
+    container_name: ziti-router-a
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      ziti-controller:
+        condition: service_healthy
+    environment:
+      ZITI_CTRL_ADVERTISED_ADDRESS: ziti-controller
+      ZITI_ROUTER_NAME: router-a
+    volumes:
+      - ./docker/openziti-router/branch-a:/openziti
+    networks:
+      ziti-fabric:
+      branch-a-net:
+        ipv4_address: 10.201.0.10
+    command: ["run", "/openziti/router.yaml"]
+
+  ziti-router-b:
+    image: openziti/ziti-router:latest
+    container_name: ziti-router-b
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      ziti-controller:
+        condition: service_healthy
+    environment:
+      ZITI_CTRL_ADVERTISED_ADDRESS: ziti-controller
+      ZITI_ROUTER_NAME: router-b
+    volumes:
+      - ./docker/openziti-router/branch-b:/openziti
+    networks:
+      ziti-fabric:
+      branch-b-net:
+        ipv4_address: 10.202.0.10
+    command: ["run", "/openziti/router.yaml"]
+
+  # ============================================
+  # Sample Private Apps (ZTNA-only access)
+  # ============================================
+  app1:
+    image: nginx:alpine
+    container_name: app1
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      branch-a-net:
+        ipv4_address: 10.201.0.100
+    # NO PORT MAPPINGS - Dark service, Ziti-only access
+    volumes:
+      - ./docker/sample-apps/app1:/usr/share/nginx/html:ro
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost"]
+
+  app2:
+    image: kennethreitz/httpbin
+    container_name: app2
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      branch-b-net:
+        ipv4_address: 10.202.0.100
+    # NO PORT MAPPINGS - Dark service, Ziti-only access
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost/get"]
+
+  # ============================================
+  # Wazuh SIEM Stack
+  # ============================================
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:4.7.0
+    container_name: wazuh-indexer
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g"
+      - "bootstrap.memory_lock=true"
+      - "discovery.type=single-node"
+      - "plugins.security.ssl.http.enabled=false"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+      - ./docker/wazuh/indexer/opensearch.yml:/usr/share/wazuh-indexer/opensearch.yml:ro
+    networks:
+      - mgmt-net
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.7.0
+    container_name: wazuh-manager
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      wazuh-indexer:
+        condition: service_healthy
+    environment:
+      - INDEXER_URL=http://wazuh-indexer:9200
+      - WAZUH_API_USER=${WAZUH_API_USER:-wazuh-wui}
+      - WAZUH_API_PASSWORD=${WAZUH_API_PASSWORD:-changeme_wazuh}
+    volumes:
+      - wazuh-manager-data:/var/ossec/data
+      - ./docker/wazuh/manager/ossec.conf:/var/ossec/etc/ossec.conf:ro
+      - /var/log/suricata:/var/log/suricata:ro
+    networks:
+      mgmt-net:
+    ports:
+      - "1514:1514/udp"  # Agent syslog
+      - "1515:1515"      # Agent registration
+      - "55000:55000"    # API
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "/var/ossec/bin/wazuh-control", "status"]
+
+  wazuh-dashboard:
+    image: wazuh/wazuh-dashboard:4.7.0
+    container_name: wazuh-dashboard
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      wazuh-manager:
+        condition: service_healthy
+    environment:
+      - INDEXER_URL=http://wazuh-indexer:9200
+      - WAZUH_API_URL=https://wazuh-manager:55000
+      - API_USERNAME=${WAZUH_API_USER:-wazuh-wui}
+      - API_PASSWORD=${WAZUH_API_PASSWORD:-changeme_wazuh}
+    networks:
+      - mgmt-net
+    ports:
+      - "5601:5601"
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+
+  # ============================================
+  # Keycloak Identity Provider
+  # ============================================
+  keycloak-db:
+    image: postgres:15-alpine
+    container_name: keycloak-db
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KC_DB_PASSWORD:-changeme_kcdb}
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    networks:
+      - mgmt-net
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0
+    container_name: keycloak
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:-changeme_kcdb}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-changeme_keycloak}
+      KC_HOSTNAME: localhost
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY: edge
+    volumes:
+      - ./docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    networks:
+      - mgmt-net
+    ports:
+      - "8443:8080"
+    command: ["start-dev", "--import-realm"]
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+
+  # ============================================
+  # Observability Stack
+  # ============================================
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: prometheus
+    restart: unless-stopped
+    logging: *default-logging
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - mgmt-net
+      - pop-net
+    ports:
+      - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: grafana
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-changeme_grafana}
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: Keycloak
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: grafana
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${PORTAL_OIDC_CLIENT_SECRET:-changeme_oidc_secret}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: http://localhost:8443/realms/opensase-lab/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/realms/opensase-lab/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/realms/opensase-lab/protocol/openid-connect/userinfo
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - mgmt-net
+    ports:
+      - "3001:3000"
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+
+  # ============================================
+  # Unified Portal
+  # ============================================
+  portal-backend:
+    build:
+      context: ./portal/backend
+      dockerfile: Dockerfile
+    container_name: portal-backend
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      SECRET_KEY: ${PORTAL_SECRET_KEY:-changeme_portal_secret_key_32chars}
+      OIDC_CLIENT_ID: portal-app
+      OIDC_CLIENT_SECRET: ${PORTAL_OIDC_CLIENT_SECRET:-changeme_oidc_secret}
+      OIDC_ISSUER: http://keycloak:8080/realms/opensase-lab
+      FLEXIWAN_API_URL: http://flexiwan-controller:3000
+      ZITI_CTRL_URL: https://ziti-controller:1280
+      WAZUH_API_URL: https://wazuh-manager:55000
+      SECURITY_POP_API_URL: http://security-pop:8080
+    networks:
+      - mgmt-net
+    ports:
+      - "8000:8000"
+    depends_on:
+      - keycloak
+      - flexiwan-controller
+      - wazuh-manager
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+
+  portal-frontend:
+    build:
+      context: ./portal/frontend
+      dockerfile: Dockerfile
+    container_name: portal-frontend
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_OIDC_AUTHORITY: http://localhost:8443/realms/opensase-lab
+      VITE_OIDC_CLIENT_ID: portal-app
+    networks:
+      - mgmt-net
+    ports:
+      - "8080:80"
+    depends_on:
+      - portal-backend
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:80"]

@@ -1,0 +1,44 @@
+[package]
+name = "sase-dataplane"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Ultra-high-performance data plane with AF_XDP kernel bypass (40Gbps+)"
+
+[dependencies]
+sase-common = { path = "../sase-common" }
+sase-policy = { path = "../sase-policy" }
+
+# Core dependencies
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+parking_lot.workspace = true
+crossbeam.workspace = true
+
+# Lock-free data structures
+dashmap.workspace = true
+flurry.workspace = true
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "time"] }
+
+# Memory management
+bytes.workspace = true
+
+# Metrics
+metrics.workspace = true
+
+# AF_XDP / eBPF (optional, requires Linux)
+# libbpf-rs = { version = "0.22", optional = true }
+# libc = "0.2"
+
+[features]
+default = []
+af_xdp = []      # Enable AF_XDP support (Linux only)
+io_uring = []    # Enable io_uring support (Linux only)
+dpdk = []        # Enable DPDK bindings (requires DPDK installed)
+
+[dev-dependencies]
+criterion.workspace = true
+proptest.workspace = true

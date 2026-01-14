@@ -1,0 +1,86 @@
+# OpenZiti Edge Router Configuration - PoP
+# Router at Security PoP that hosts services
+
+v: 3
+
+# ============================================
+# Identity
+# ============================================
+identity:
+  cert: /persistent/pki/router-pop.cert
+  server_cert: /persistent/pki/router-pop.server.cert
+  key: /persistent/pki/router-pop.key
+  ca: /persistent/pki/router-pop.ca.cert
+
+# ============================================
+# Controller Connection
+# ============================================
+ctrl:
+  endpoint: tls:ziti-controller:6262
+
+# ============================================
+# Link Listeners (Router-to-Router)
+# ============================================
+link:
+  dialers:
+    - binding: transport
+
+  listeners:
+    - binding: transport
+      bind: tls:0.0.0.0:10080
+      advertise: tls:ziti-router-pop:10080
+      options:
+        outQueueSize: 16
+
+# ============================================
+# Edge Listeners (Client Connections)
+# ============================================
+listeners:
+  # Edge listener for Ziti clients
+  - binding: edge
+    address: tls:0.0.0.0:3022
+    options:
+      advertise: ziti-router-pop:3022
+      connectTimeoutMs: 5000
+      getSessionTimeout: 60s
+
+  # Tunnel listener for hosting services
+  - binding: tunnel
+    options:
+      mode: host
+      resolver: udp://127.0.0.1:53
+
+# ============================================
+# Forwarder Options
+# ============================================
+forwarder:
+  latencyProbeInterval: 10s
+  xgressDialQueueLength: 1000
+  xgressDialWorkerCount: 128
+  linkDialQueueLength: 1000
+  linkDialWorkerCount: 32
+
+# ============================================
+# CSR for Certificate Generation
+# ============================================
+csr:
+  country: US
+  province: NC
+  locality: Charlotte
+  organization: OpenSASE Lab
+  organizationalUnit: ZTNA
+  sans:
+    dns:
+      - localhost
+      - ziti-router-pop
+    ip:
+      - 127.0.0.1
+      - 10.210.0.10
+      - 10.200.0.1
+
+# ============================================
+# Metrics
+# ============================================
+metrics:
+  reportInterval: 15s
+  messageQueueSize: 10
