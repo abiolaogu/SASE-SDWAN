@@ -47,6 +47,10 @@ pub mod hunting;
 pub mod forensics;
 pub mod compliance;
 pub mod alerts;
+pub mod normalize;
+pub mod enrichment;
+pub mod correlation;
+pub mod pipeline;
 
 // =============================================================================
 // Core Types
