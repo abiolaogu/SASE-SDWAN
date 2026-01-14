@@ -3,6 +3,14 @@
 //! Provides programmatic control over Megaport and PacketFabric
 //! for on-demand VXC provisioning and bandwidth management.
 
+pub mod orchestrator;
+pub mod vpp_integration;
+pub mod cost_optimizer;
+
+pub use orchestrator::*;
+pub use vpp_integration::*;
+pub use cost_optimizer::*;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
