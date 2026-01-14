@@ -3,13 +3,17 @@
 ## Performance Requirements
 
 ### Primary Targets
-| Metric | Target | Measurement Method |
-|--------|--------|--------------------|
-| Throughput | ≥100 Gbps | TRex line-rate generation |
-| Latency (E2E) | <5 μs | Timestamped packets |
-| Packet Rate (64B) | 148 Mpps | Line rate at minimum frame |
-| Packet Rate (IMIX) | 50 Mpps | Weighted average sizing |
-| Jitter | <1 μs | P99 latency variation |
+| Metric | Target |
+|--------|--------|
+| Throughput (64-byte packets) | 100 Mpps |
+| Throughput (1518-byte packets) | 100 Gbps |
+| Throughput (IMIX) | 80 Gbps |
+| Latency (p50) | <5 μs |
+| Latency (p99) | <20 μs |
+| Concurrent flows | 10M+ |
+| New flows per second | 1M+ |
+| WireGuard encrypted throughput | 80 Gbps |
+| CPU utilization | <80% at 100 Gbps |
 
 ### Per-Node Latency Budget
 | Node | Target | Description |
