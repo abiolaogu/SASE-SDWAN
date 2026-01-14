@@ -22,6 +22,8 @@ pub mod mitigator;
 pub mod flowspec;
 pub mod baseline;
 pub mod vpp;
+pub mod xdp;
+pub mod app_layer;
 
 // =============================================================================
 // Attack Types
