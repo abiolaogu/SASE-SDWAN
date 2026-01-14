@@ -1,0 +1,22 @@
+comment { OBMO VPP Startup Commands }
+comment { {{ pop_name | default('obmo') }} - {{ nic_speed | default(100) }} Gbps }
+
+# Enable all interfaces
+set interface state all up
+
+# Configure NAT
+nat44 plugin enable sessions {{ '10000000' if nic_speed | int >= 100 else '1000000' }}
+
+# ICMP handling
+set punt ipv4 udp all
+set punt ipv6 udp all
+
+{% if enable_wireguard | default(true) %}
+comment { WireGuard ready }
+{% endif %}
+
+{% if enable_acl | default(true) %}
+comment { ACL plugin ready }
+{% endif %}
+
+comment { VPP initialization complete }

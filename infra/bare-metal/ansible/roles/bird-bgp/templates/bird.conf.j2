@@ -1,0 +1,93 @@
+# BIRD 2.x Configuration
+# OBMO PoP: {{ pop_name | default('obmo') }}
+# Managed by Ansible
+
+log syslog all;
+log stderr { error, fatal };
+
+router id {{ router_id | default(ansible_default_ipv4.address) }};
+
+# Include additional configs
+include "/etc/bird/filters.conf";
+{% if provider | default('') == 'equinix' %}
+include "/etc/bird/equinix.conf";
+{% else %}
+include "/etc/bird/peering.conf";
+{% endif %}
+
+# ===========================================
+# Protocols
+# ===========================================
+
+protocol device {
+    scan time 10;
+}
+
+protocol direct {
+    ipv4;
+    ipv6;
+    interface "lo", "lo:*";
+}
+
+protocol kernel kernel4 {
+    ipv4 {
+        export filter {
+            if source = RTS_BGP then accept;
+            reject;
+        };
+        import none;
+    };
+    learn;
+    persist;
+    graceful restart;
+}
+
+protocol kernel kernel6 {
+    ipv6 {
+        export filter {
+            if source = RTS_BGP then accept;
+            reject;
+        };
+        import none;
+    };
+    learn;
+    persist;
+    graceful restart;
+}
+
+# ===========================================
+# Static Routes for Anycast
+# ===========================================
+
+protocol static static_anycast {
+    ipv4;
+{% if anycast_prefixes is defined %}
+{% for prefix in anycast_prefixes %}
+    route {{ prefix }} blackhole;
+{% endfor %}
+{% else %}
+    # No anycast prefixes defined
+{% endif %}
+}
+
+protocol static static_anycast6 {
+    ipv6;
+{% if anycast_prefixes_v6 is defined %}
+{% for prefix in anycast_prefixes_v6 %}
+    route {{ prefix }} blackhole;
+{% endfor %}
+{% endif %}
+}
+
+# ===========================================
+# BFD for Fast Failover
+# ===========================================
+
+protocol bfd {
+    interface "*" {
+        min rx interval 100 ms;
+        min tx interval 100 ms;
+        idle tx interval 1 s;
+        multiplier 3;
+    };
+}

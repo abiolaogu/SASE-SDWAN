@@ -1,0 +1,154 @@
+# OBMO BIRD BGP Role
+# BGP configuration for anycast and peering
+
+---
+- name: Install BIRD2
+  apt:
+    name:
+      - bird2
+      - bird2-doc
+    state: present
+    update_cache: yes
+
+# ===========================================
+# BIRD Configuration
+# ===========================================
+
+- name: Create BIRD configuration directory
+  file:
+    path: /etc/bird
+    state: directory
+    mode: '0755'
+
+- name: Deploy BIRD main configuration
+  template:
+    src: bird.conf.j2
+    dest: /etc/bird/bird.conf
+    owner: root
+    group: bird
+    mode: '0640'
+    validate: 'bird -p -c %s'
+  notify: Reload BIRD
+
+# ===========================================
+# BGP Filters
+# ===========================================
+
+- name: Deploy BGP filter configuration
+  template:
+    src: filters.conf.j2
+    dest: /etc/bird/filters.conf
+    owner: root
+    group: bird
+    mode: '0640'
+  notify: Reload BIRD
+
+# ===========================================
+# Provider-Specific Configuration
+# ===========================================
+
+- name: Deploy Equinix BGP config
+  template:
+    src: equinix.conf.j2
+    dest: /etc/bird/equinix.conf
+    owner: root
+    group: bird
+    mode: '0640'
+  when: provider | default('') == 'equinix'
+  notify: Reload BIRD
+
+- name: Deploy generic peering config
+  template:
+    src: peering.conf.j2
+    dest: /etc/bird/peering.conf
+    owner: root
+    group: bird
+    mode: '0640'
+  when: provider | default('') != 'equinix'
+  notify: Reload BIRD
+
+# ===========================================
+# Anycast Configuration
+# ===========================================
+
+- name: Configure anycast loopback
+  blockinfile:
+    path: /etc/network/interfaces.d/anycast
+    create: yes
+    block: |
+      auto lo:1
+      iface lo:1 inet static
+        address {{ anycast_ip | default('10.255.255.1') }}
+        netmask 255.255.255.255
+    mode: '0644'
+  when: anycast_ip is defined
+  notify: Apply anycast interface
+
+# ===========================================
+# Systemd Configuration
+# ===========================================
+
+- name: Create BIRD service override
+  copy:
+    dest: /etc/systemd/system/bird.service.d/override.conf
+    content: |
+      [Service]
+      ExecReload=/usr/sbin/birdc configure
+      Restart=on-failure
+      RestartSec=5
+    mode: '0644'
+  notify: Reload systemd
+
+# ===========================================
+# Enable and Start BIRD
+# ===========================================
+
+- name: Enable BIRD service
+  systemd:
+    name: bird
+    enabled: yes
+    daemon_reload: yes
+
+- name: Start BIRD service
+  systemd:
+    name: bird
+    state: started
+
+- name: Wait for BIRD to be ready
+  wait_for:
+    timeout: 10
+
+- name: Show BIRD status
+  command: birdc show status
+  register: bird_status
+  changed_when: false
+
+- name: Display BIRD status
+  debug:
+    var: bird_status.stdout_lines
+
+- name: Show BGP protocols
+  command: birdc show protocols
+  register: bird_protocols
+  changed_when: false
+
+- name: Display BGP protocols
+  debug:
+    var: bird_protocols.stdout_lines
+
+# ===========================================
+# Handlers
+# ===========================================
+
+handlers:
+  - name: Reload BIRD
+    command: birdc configure
+    failed_when: false
+
+  - name: Reload systemd
+    systemd:
+      daemon_reload: yes
+
+  - name: Apply anycast interface
+    command: ifup lo:1
+    failed_when: false

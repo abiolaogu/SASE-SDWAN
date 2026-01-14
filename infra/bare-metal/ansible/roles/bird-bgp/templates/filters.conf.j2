@@ -1,0 +1,71 @@
+# BIRD BGP Filters
+# OBMO PoP: {{ pop_name | default('obmo') }}
+
+# ===========================================
+# Local AS Definition
+# ===========================================
+
+define MY_AS = {{ bgp_asn | default(65100) }};
+
+{% if anycast_prefixes is defined %}
+define ANYCAST_PREFIXES = [
+{% for prefix in anycast_prefixes %}
+    {{ prefix }}{{ ',' if not loop.last else '' }}
+{% endfor %}
+];
+{% else %}
+define ANYCAST_PREFIXES = [];
+{% endif %}
+
+# ===========================================
+# Export Filters
+# ===========================================
+
+filter export_anycast {
+    # Only export our anycast prefixes
+{% if anycast_prefixes is defined %}
+{% for prefix in anycast_prefixes %}
+    if net = {{ prefix }} then accept;
+{% endfor %}
+{% endif %}
+    reject;
+}
+
+filter export_default {
+    # Export all BGP-learned routes and static anycast
+    if source = RTS_STATIC then accept;
+    if source = RTS_BGP then accept;
+    reject;
+}
+
+# ===========================================
+# Import Filters
+# ===========================================
+
+filter import_upstream {
+    # Accept default route
+    if net = 0.0.0.0/0 then accept;
+    
+    # Accept legitimate prefixes
+    if net.len > 24 then reject;
+    if net.len < 8 then reject;
+    
+    accept;
+}
+
+filter import_peer {
+    # Only accept peer's own prefixes
+    # Reject too specifics and bogons
+    if net.len > 24 then reject;
+    if net.len < 8 then reject;
+    
+    accept;
+}
+
+# ===========================================
+# Community Definitions
+# ===========================================
+
+define COMMUNITY_INTERNAL = ({{ bgp_asn | default(65100) }}, 1);
+define COMMUNITY_ANYCAST = ({{ bgp_asn | default(65100) }}, 100);
+define COMMUNITY_NO_EXPORT = (65535, 65281);

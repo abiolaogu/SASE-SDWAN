@@ -1,0 +1,74 @@
+# Equinix Metal BGP Configuration
+# OBMO PoP: {{ pop_name | default('obmo') }}
+
+# ===========================================
+# Equinix Metal BGP Peering
+# ===========================================
+
+# Equinix uses ASN 65530 for local BGP
+define EQUINIX_ASN = 65530;
+
+# IPv4 BGP Session
+protocol bgp equinix_v4 {
+    description "Equinix Metal IPv4 BGP";
+    local as MY_AS;
+    
+    # Equinix Metal BGP neighbor
+    neighbor 169.254.255.1 as EQUINIX_ASN;
+    
+    multihop 2;
+    
+{% if bgp_password is defined %}
+    password "{{ bgp_password }}";
+{% endif %}
+    
+    hold time 90;
+    keepalive time 30;
+    
+    graceful restart on;
+    
+    ipv4 {
+        import none;  # We don't need routes from Equinix
+        export filter export_anycast;
+        
+        next hop self;
+    };
+}
+
+# IPv6 BGP Session
+protocol bgp equinix_v6 {
+    description "Equinix Metal IPv6 BGP";
+    local as MY_AS;
+    
+{% if equinix_neighbor_v6 is defined %}
+    neighbor {{ equinix_neighbor_v6 }} as EQUINIX_ASN;
+{% else %}
+    # IPv6 neighbor (obtained from Equinix portal)
+    neighbor 2604:1380:4641:c500::1 as EQUINIX_ASN;
+{% endif %}
+    
+    multihop 2;
+    
+{% if bgp_password is defined %}
+    password "{{ bgp_password }}";
+{% endif %}
+    
+    hold time 90;
+    keepalive time 30;
+    
+    graceful restart on;
+    
+    ipv6 {
+        import none;
+        export filter {
+{% if anycast_prefixes_v6 is defined %}
+{% for prefix in anycast_prefixes_v6 %}
+            if net = {{ prefix }} then accept;
+{% endfor %}
+{% endif %}
+            reject;
+        };
+        
+        next hop self;
+    };
+}

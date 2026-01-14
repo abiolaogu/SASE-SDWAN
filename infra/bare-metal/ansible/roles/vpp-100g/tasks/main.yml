@@ -1,0 +1,210 @@
+# OBMO VPP 100G Role
+# High-performance VPP configuration for 100+ Gbps
+
+---
+- name: Install VPP repository
+  shell: curl -sL https://packagecloud.io/install/repositories/fdio/release/script.deb.sh | bash
+  args:
+    creates: /etc/apt/sources.list.d/fdio_release.list
+
+- name: Install VPP packages
+  apt:
+    name:
+      - vpp
+      - vpp-plugin-core
+      - vpp-plugin-dpdk
+      - vpp-plugin-wireguard
+      - vpp-plugin-nat
+      - vpp-plugin-acl
+      - vpp-dev
+      - vpp-api-python
+      - libvppinfra
+    state: present
+    update_cache: yes
+
+# ===========================================
+# VPP Directories
+# ===========================================
+
+- name: Create VPP directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: vpp
+    group: vpp
+    mode: '0755'
+  loop:
+    - /etc/vpp
+    - /var/log/vpp
+    - /run/vpp
+
+# ===========================================
+# Calculate Worker Configuration
+# ===========================================
+
+- name: Get total CPU count
+  set_fact:
+    total_cpus: "{{ ansible_processor_vcpus }}"
+
+- name: Calculate VPP workers
+  set_fact:
+    vpp_workers: "{{ [16, (total_cpus | int - 2)] | min }}"
+    vpp_worker_list: "2-{{ [17, (total_cpus | int - 1)] | min }}"
+
+# ===========================================
+# VPP Configuration by Speed
+# ===========================================
+
+- name: Set VPP config for speed tier
+  set_fact:
+    vpp_config:
+      rx_queues: "{{ 16 if nic_speed | int >= 100 else (8 if nic_speed | int >= 50 else 4) }}"
+      tx_queues: "{{ 16 if nic_speed | int >= 100 else (8 if nic_speed | int >= 50 else 4) }}"
+      rx_desc: "{{ 8192 if nic_speed | int >= 100 else 4096 }}"
+      tx_desc: "{{ 8192 if nic_speed | int >= 100 else 4096 }}"
+      buffers: "{{ 524288 if nic_speed | int >= 100 else 256000 }}"
+      socket_mem: "{{ '8192,8192' if nic_speed | int >= 100 else '4096,4096' }}"
+      mbufs: "{{ 524288 if nic_speed | int >= 100 else 262144 }}"
+
+# ===========================================
+# VPP Startup Configuration
+# ===========================================
+
+- name: Deploy VPP startup configuration
+  template:
+    src: startup.conf.j2
+    dest: /etc/vpp/startup.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart VPP
+
+- name: Deploy VPP startup commands
+  template:
+    src: startup.exec.j2
+    dest: /etc/vpp/startup.exec
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Restart VPP
+
+# ===========================================
+# VPP Service Configuration
+# ===========================================
+
+- name: Create VPP service override directory
+  file:
+    path: /etc/systemd/system/vpp.service.d
+    state: directory
+    mode: '0755'
+
+- name: Configure VPP service limits
+  copy:
+    dest: /etc/systemd/system/vpp.service.d/limits.conf
+    content: |
+      [Service]
+      LimitNOFILE=1048576
+      LimitMEMLOCK=infinity
+      LimitCORE=infinity
+    mode: '0644'
+  notify: Reload systemd
+
+# ===========================================
+# VPP Exporter for Prometheus
+# ===========================================
+
+- name: Install VPP Prometheus exporter
+  get_url:
+    url: https://github.com/ligato/vpp-probe/releases/download/v0.4.0/vpp-probe_linux_amd64.tar.gz
+    dest: /tmp/vpp-probe.tar.gz
+    mode: '0644'
+
+- name: Extract VPP probe
+  unarchive:
+    src: /tmp/vpp-probe.tar.gz
+    dest: /usr/local/bin
+    remote_src: yes
+    mode: '0755'
+  failed_when: false
+
+- name: Create VPP exporter service
+  copy:
+    dest: /etc/systemd/system/vpp-exporter.service
+    content: |
+      [Unit]
+      Description=VPP Prometheus Exporter
+      After=vpp.service
+      Requires=vpp.service
+      
+      [Service]
+      Type=simple
+      ExecStart=/usr/local/bin/vpp-probe --metrics-addr=:9482
+      Restart=always
+      RestartSec=5
+      
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  notify: Enable VPP exporter
+
+# ===========================================
+# Enable and Start VPP
+# ===========================================
+
+- name: Enable VPP service
+  systemd:
+    name: vpp
+    enabled: yes
+    daemon_reload: yes
+
+- name: Start VPP service
+  systemd:
+    name: vpp
+    state: started
+
+- name: Wait for VPP to be ready
+  wait_for:
+    path: /run/vpp/cli.sock
+    timeout: 60
+
+- name: Verify VPP is running
+  command: vppctl show version
+  register: vpp_version
+  changed_when: false
+  retries: 5
+  delay: 5
+
+- name: Display VPP version
+  debug:
+    var: vpp_version.stdout_lines
+
+- name: Check VPP interfaces
+  command: vppctl show interface
+  register: vpp_interfaces
+  changed_when: false
+
+- name: Display VPP interfaces
+  debug:
+    var: vpp_interfaces.stdout_lines
+
+# ===========================================
+# Handlers
+# ===========================================
+
+handlers:
+  - name: Restart VPP
+    systemd:
+      name: vpp
+      state: restarted
+      daemon_reload: yes
+
+  - name: Reload systemd
+    systemd:
+      daemon_reload: yes
+
+  - name: Enable VPP exporter
+    systemd:
+      name: vpp-exporter
+      enabled: yes
+      state: started
+      daemon_reload: yes

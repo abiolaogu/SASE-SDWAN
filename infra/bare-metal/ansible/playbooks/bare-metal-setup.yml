@@ -1,0 +1,275 @@
+# OBMO Main Bare Metal Setup Playbook
+# Configures dedicated servers for 100+ Gbps operation
+
+---
+- name: OpenSASE Bare Metal Orchestrator (OBMO)
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    # Default values (override in inventory or extra-vars)
+    pop_name: "{{ pop_name | default('obmo') }}"
+    provider: "{{ provider | default('equinix') }}"
+    nic_type: "{{ nic_type | default('intel_xxv710') }}"
+    nic_speed: "{{ nic_speed | default(100) }}"
+    controller_url: "{{ controller_url | default('https://manage.opensase.io') }}"
+    activation_key: "{{ activation_key | default('') }}"
+    enable_bgp: "{{ enable_bgp | default(true) }}"
+    bgp_asn: "{{ bgp_asn | default(65100) }}"
+    hugepages: "{{ 8192 if nic_speed | int >= 100 else 4096 }}"
+    
+  # ===========================================
+  # Pre-flight Checks
+  # ===========================================
+  
+  pre_tasks:
+    - name: Display deployment info
+      debug:
+        msg: |
+          ========================================
+          OBMO Bare Metal Deployment
+          ========================================
+          PoP Name:    {{ pop_name }}
+          Provider:    {{ provider }}
+          NIC Type:    {{ nic_type }}
+          NIC Speed:   {{ nic_speed }} Gbps
+          Enable BGP:  {{ enable_bgp }}
+          Target:      100+ Gbps, <15 min
+          ========================================
+
+    - name: Verify minimum CPU cores
+      assert:
+        that:
+          - ansible_processor_vcpus >= 16
+        fail_msg: "Server has {{ ansible_processor_vcpus }} cores, need >= 16 for 100G"
+        success_msg: "CPU cores OK: {{ ansible_processor_vcpus }}"
+
+    - name: Verify minimum RAM
+      assert:
+        that:
+          - ansible_memtotal_mb >= 65536
+        fail_msg: "Server has {{ ansible_memtotal_mb }}MB RAM, need >= 64GB"
+        success_msg: "RAM OK: {{ (ansible_memtotal_mb / 1024) | round(1) }}GB"
+
+    - name: Check activation key
+      assert:
+        that:
+          - activation_key | length > 0
+        fail_msg: "FlexiWAN activation_key is required"
+      when: activation_key is defined
+
+  # ===========================================
+  # Roles
+  # ===========================================
+  
+  roles:
+    - role: bare-metal-prep
+      tags: [prep, always]
+      
+    - role: dpdk-binding
+      tags: [dpdk, network]
+      
+    - role: vpp-100g
+      tags: [vpp, dataplane]
+      
+    - role: bird-bgp
+      tags: [bgp, routing]
+      when: enable_bgp | bool
+
+  # ===========================================
+  # FlexiEdge Installation
+  # ===========================================
+  
+  tasks:
+    - name: Install FlexiEdge repository
+      shell: curl -sL https://deb.flexiwan.com/setup | bash
+      args:
+        creates: /etc/apt/sources.list.d/flexiwan.list
+
+    - name: Install FlexiEdge
+      apt:
+        name: flexiwan-router
+        state: present
+        update_cache: yes
+
+    - name: Create FlexiEdge configuration
+      copy:
+        dest: /etc/flexiwan/agent.conf
+        content: |
+          {
+            "deviceName": "{{ pop_name }}-{{ inventory_hostname_short | default(ansible_hostname) }}",
+            "dataPlane": "vpp",
+            "vppSocketPath": "/run/vpp/cli.sock",
+            "managementUrl": "{{ controller_url }}",
+            "token": "{{ activation_key }}",
+            "logLevel": "info",
+            "telemetryInterval": 15,
+            "features": {
+              "sdwan": true,
+              "firewall": true,
+              "nat": true,
+              "qos": true,
+              "wireguard": true
+            }
+          }
+        mode: '0600'
+      notify: Restart FlexiEdge
+
+    - name: Enable and start FlexiEdge
+      systemd:
+        name: flexiwan
+        enabled: yes
+        state: started
+
+    # =========================================
+    # Health Check Service
+    # =========================================
+
+    - name: Deploy health check script
+      copy:
+        dest: /opt/obmo-health.py
+        mode: '0755'
+        content: |
+          #!/usr/bin/env python3
+          import http.server
+          import json
+          import subprocess
+          import socketserver
+          
+          PORT = 8080
+          
+          class HealthHandler(http.server.BaseHTTPRequestHandler):
+              def log_message(self, format, *args):
+                  pass
+                  
+              def do_GET(self):
+                  if self.path == '/health':
+                      health = self.get_health()
+                      code = 200 if health['status'] == 'healthy' else 503
+                      self.send_response(code)
+                      self.send_header('Content-Type', 'application/json')
+                      self.end_headers()
+                      self.wfile.write(json.dumps(health, indent=2).encode())
+                  elif self.path == '/metrics':
+                      self.send_metrics()
+                  else:
+                      self.send_response(404)
+                      self.end_headers()
+              
+              def get_health(self):
+                  services = {
+                      'vpp': self.check('vpp'),
+                      'flexiwan': self.check('flexiwan'),
+                      'bird': self.check('bird')
+                  }
+                  all_ok = services['vpp'] and services['flexiwan']
+                  return {
+                      'status': 'healthy' if all_ok else 'unhealthy',
+                      'pop': '{{ pop_name }}',
+                      'provider': '{{ provider }}',
+                      'nic_speed_gbps': {{ nic_speed }},
+                      'services': services
+                  }
+              
+              def check(self, svc):
+                  return subprocess.run(['systemctl', 'is-active', svc], 
+                      capture_output=True).returncode == 0
+              
+              def send_metrics(self):
+                  self.send_response(200)
+                  self.send_header('Content-Type', 'text/plain')
+                  self.end_headers()
+                  h = self.get_health()
+                  up = 1 if h['status'] == 'healthy' else 0
+                  self.wfile.write(f'obmo_up{{pop="{h["pop"]}"}} {up}\n'.encode())
+          
+          if __name__ == '__main__':
+              with socketserver.TCPServer(('', PORT), HealthHandler) as httpd:
+                  httpd.serve_forever()
+
+    - name: Deploy health check service
+      copy:
+        dest: /etc/systemd/system/obmo-health.service
+        content: |
+          [Unit]
+          Description=OBMO Health Check
+          After=vpp.service flexiwan.service
+          
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/python3 /opt/obmo-health.py
+          Restart=always
+          RestartSec=5
+          
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+      notify: Enable health service
+
+  # ===========================================
+  # Post-deployment Verification
+  # ===========================================
+  
+  post_tasks:
+    - name: Wait for VPP to be fully ready
+      wait_for:
+        path: /run/vpp/cli.sock
+        timeout: 60
+
+    - name: Verify VPP is running
+      command: vppctl show version
+      register: vpp_check
+      changed_when: false
+
+    - name: Verify FlexiEdge is running
+      command: systemctl is-active flexiwan
+      register: flexi_check
+      changed_when: false
+
+    - name: Check health endpoint
+      uri:
+        url: http://127.0.0.1:8080/health
+        return_content: yes
+      register: health_result
+      retries: 5
+      delay: 5
+      until: health_result.status == 200
+
+    - name: Display deployment result
+      debug:
+        msg: |
+          ========================================
+          OBMO Deployment Complete!
+          ========================================
+          PoP:         {{ pop_name }}
+          Provider:    {{ provider }}
+          NIC Speed:   {{ nic_speed }} Gbps
+          VPP:         {{ 'OK' if vpp_check.rc == 0 else 'FAILED' }}
+          FlexiEdge:   {{ 'OK' if flexi_check.rc == 0 else 'FAILED' }}
+          Health:      {{ health_result.json.status }}
+          ========================================
+          
+          Access:
+            SSH:       ssh root@{{ ansible_host }}
+            Health:    http://{{ ansible_host }}:8080/health
+            VPP CLI:   vppctl
+          ========================================
+
+  # ===========================================
+  # Handlers
+  # ===========================================
+  
+  handlers:
+    - name: Restart FlexiEdge
+      systemd:
+        name: flexiwan
+        state: restarted
+        daemon_reload: yes
+
+    - name: Enable health service
+      systemd:
+        name: obmo-health
+        enabled: yes
+        state: started
+        daemon_reload: yes

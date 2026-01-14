@@ -1,0 +1,99 @@
+# VPP 100 Gbps Startup Configuration
+# Managed by Ansible - OBMO
+
+unix {
+    nodaemon
+    cli-listen /run/vpp/cli.sock
+    log /var/log/vpp/vpp.log
+    full-coredump
+    gid vpp
+    exec /etc/vpp/startup.exec
+}
+
+api-trace {
+    on
+    nitems 5000
+}
+
+api-segment {
+    gid vpp
+}
+
+socksvr {
+    default
+}
+
+# CPU Configuration for {{ nic_speed | default(100) }} Gbps
+cpu {
+    main-core 0
+    corelist-workers {{ vpp_worker_list | default('2-17') }}
+    scheduler-policy fifo
+    scheduler-priority 80
+}
+
+# DPDK Configuration
+dpdk {
+    dev default {
+        num-rx-queues {{ vpp_config.rx_queues }}
+        num-tx-queues {{ vpp_config.tx_queues }}
+        num-rx-desc {{ vpp_config.rx_desc }}
+        num-tx-desc {{ vpp_config.tx_desc }}
+    }
+    
+{% if dpdk_pci_addresses is defined %}
+{% for pci in dpdk_pci_addresses %}
+    dev {{ pci }}
+{% endfor %}
+{% endif %}
+    
+{% if nic_type is defined and 'mellanox' in nic_type %}
+    # Mellanox uses native driver with DPDK PMD
+{% else %}
+    uio-driver vfio-pci
+{% endif %}
+    
+    socket-mem {{ vpp_config.socket_mem }}
+    num-mbufs {{ vpp_config.mbufs }}
+    no-multi-seg
+{% if nic_speed | int >= 100 %}
+    no-tx-checksum-offload
+{% endif %}
+}
+
+# Buffer Configuration for High Throughput
+buffers {
+    buffers-per-numa {{ vpp_config.buffers }}
+    default data-size 2048
+{% if nic_speed | int >= 100 %}
+    page-size 2M
+{% endif %}
+}
+
+# Statistics Segment
+statseg {
+    socket-name /var/run/vpp/stats.sock
+    size {{ '512M' if nic_speed | int >= 100 else '256M' }}
+    per-node-counters on
+}
+
+# Plugins
+plugins {
+    plugin default { enable }
+    plugin dpdk_plugin.so { enable }
+    plugin wireguard_plugin.so { enable }
+    plugin nat_plugin.so { enable }
+    plugin acl_plugin.so { enable }
+    plugin ping_plugin.so { enable }
+{% if enable_linux_cp | default(false) %}
+    plugin linux_cp_plugin.so { enable }
+{% endif %}
+}
+
+{% if nic_speed | int >= 100 %}
+# 100G+ Specific Optimizations
+heapsize 4G
+
+nat {
+    max translations per user 100000
+}
+{% endif %}
