@@ -1,0 +1,192 @@
+# Redpanda - Kafka-compatible Streaming Platform
+# Prompt 67: Kafka Replacement
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: messaging
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redpanda
+  namespace: messaging
+spec:
+  serviceName: redpanda
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redpanda
+  template:
+    metadata:
+      labels:
+        app: redpanda
+    spec:
+      containers:
+      - name: redpanda
+        image: redpandadata/redpanda:v23.3.5
+        args:
+        - redpanda
+        - start
+        - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:9093
+        - --advertise-kafka-addr internal://$(POD_NAME).redpanda.messaging.svc.cluster.local:9092,external://$(POD_IP):9093
+        - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:8083
+        - --advertise-pandaproxy-addr internal://$(POD_NAME).redpanda.messaging.svc.cluster.local:8082,external://$(POD_IP):8083
+        - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:8084
+        - --rpc-addr $(POD_IP):33145
+        - --advertise-rpc-addr $(POD_NAME).redpanda.messaging.svc.cluster.local:33145
+        - --smp 2
+        - --memory 2G
+        - --overprovisioned
+        - --default-log-level=info
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 9092
+          name: kafka-internal
+        - containerPort: 9093
+          name: kafka-external
+        - containerPort: 8082
+          name: proxy-internal
+        - containerPort: 8081
+          name: schema-internal
+        - containerPort: 33145
+          name: rpc
+        - containerPort: 9644
+          name: admin
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/redpanda/data
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "4"
+            memory: "4Gi"
+        readinessProbe:
+          httpGet:
+            path: /v1/status/ready
+            port: 9644
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /v1/status/ready
+            port: 9644
+          initialDelaySeconds: 30
+          periodSeconds: 15
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redpanda
+  namespace: messaging
+spec:
+  selector:
+    app: redpanda
+  ports:
+  - port: 9092
+    name: kafka
+  - port: 8082
+    name: proxy
+  - port: 8081
+    name: schema
+  - port: 9644
+    name: admin
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redpanda-headless
+  namespace: messaging
+spec:
+  clusterIP: None
+  selector:
+    app: redpanda
+  ports:
+  - port: 9092
+    name: kafka
+  - port: 33145
+    name: rpc
+---
+# Redpanda Console (Kafka UI)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redpanda-console
+  namespace: messaging
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redpanda-console
+  template:
+    metadata:
+      labels:
+        app: redpanda-console
+    spec:
+      containers:
+      - name: console
+        image: redpandadata/console:v2.4.0
+        env:
+        - name: CONFIG_FILEPATH
+          value: /etc/redpanda/redpanda-console.yaml
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/redpanda
+      volumes:
+      - name: config
+        configMap:
+          name: redpanda-console-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redpanda-console-config
+  namespace: messaging
+data:
+  redpanda-console.yaml: |
+    kafka:
+      brokers:
+        - redpanda-0.redpanda-headless.messaging.svc.cluster.local:9092
+        - redpanda-1.redpanda-headless.messaging.svc.cluster.local:9092
+        - redpanda-2.redpanda-headless.messaging.svc.cluster.local:9092
+      schemaRegistry:
+        enabled: true
+        urls:
+          - http://redpanda:8081
+    redpanda:
+      adminApi:
+        enabled: true
+        urls:
+          - http://redpanda:9644
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redpanda-console
+  namespace: messaging
+spec:
+  selector:
+    app: redpanda-console
+  ports:
+  - port: 8080
+    targetPort: 8080

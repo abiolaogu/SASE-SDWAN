@@ -1,0 +1,164 @@
+# Harbor Container Registry
+# Prompt 63: Docker Hub/ECR Replacement
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: registry
+---
+# Harbor Core components via Helm values
+# Deploy with: helm install harbor harbor/harbor -n registry -f harbor-values.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: harbor-values
+  namespace: registry
+data:
+  values.yaml: |
+    expose:
+      type: ingress
+      tls:
+        enabled: true
+        certSource: auto
+      ingress:
+        hosts:
+          core: registry.opensase.local
+    
+    externalURL: https://registry.opensase.local
+    
+    persistence:
+      enabled: true
+      persistentVolumeClaim:
+        registry:
+          size: 100Gi
+        chartmuseum:
+          size: 10Gi
+        jobservice:
+          size: 10Gi
+        database:
+          size: 10Gi
+        redis:
+          size: 5Gi
+        trivy:
+          size: 10Gi
+    
+    harborAdminPassword: "Harbor12345"
+    
+    # Enable all components
+    chartmuseum:
+      enabled: true
+    
+    trivy:
+      enabled: true
+      skipUpdate: false
+      severity: "UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL"
+    
+    notary:
+      enabled: true
+    
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+    
+    # Database
+    database:
+      type: internal
+    
+    # Redis
+    redis:
+      type: internal
+    
+    # Resource limits
+    core:
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 1Gi
+          cpu: 1
+    
+    registry:
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 2Gi
+          cpu: 2
+    
+    # Garbage collection
+    jobservice:
+      jobLoggers:
+        - stdout
+      # Run GC weekly
+      gcSchedule: "0 0 * * 0"
+---
+# Alternative: Simple Docker Registry
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docker-registry
+  namespace: registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: docker-registry
+  template:
+    metadata:
+      labels:
+        app: docker-registry
+    spec:
+      containers:
+      - name: registry
+        image: registry:2.8
+        ports:
+        - containerPort: 5000
+        env:
+        - name: REGISTRY_STORAGE_DELETE_ENABLED
+          value: "true"
+        - name: REGISTRY_HTTP_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: registry-secret
+              key: http-secret
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/registry
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: registry-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: registry-data
+  namespace: registry
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docker-registry
+  namespace: registry
+spec:
+  selector:
+    app: docker-registry
+  ports:
+  - port: 5000
+    targetPort: 5000
