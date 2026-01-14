@@ -7,11 +7,15 @@ pub mod ixp;
 pub mod peeringdb;
 pub mod sessions;
 pub mod route_policy;
+pub mod rir_management;
+pub mod bird_config;
 
 pub use ixp::*;
 pub use peeringdb::*;
 pub use sessions::*;
 pub use route_policy::*;
+pub use rir_management::*;
+pub use bird_config::*;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
