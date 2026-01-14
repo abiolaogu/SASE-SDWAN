@@ -1,0 +1,50 @@
+[package]
+name = "sase-sdwan"
+version = "0.1.0"
+edition = "2021"
+authors = ["OpenSASE Team"]
+description = "SD-WAN Orchestrator - FlexiWAN integration and VPP data plane"
+license = "Apache-2.0"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+async-trait = "0.1"
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+
+# Data structures
+dashmap = "5.5"
+arc-swap = "1.6"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# IP networking
+ipnet = "2.9"
+
+# Crypto
+base64 = "0.21"
+x25519-dalek = "2.0"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = []
+vpp = []

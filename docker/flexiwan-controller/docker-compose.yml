@@ -1,0 +1,78 @@
+# FlexiWAN Controller Deployment
+# OpenSASE SD-WAN Orchestrator
+
+services:
+  # FlexiWAN Controller (Management UI)
+  flexiwan-controller:
+    image: flexiwan/flexiwan-controller:latest
+    container_name: flexiwan-controller
+    ports:
+      - "3000:3000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/flexiwan
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=production
+      - JWT_SECRET=${FLEXIWAN_JWT_SECRET:-opensase-dev-secret}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+    depends_on:
+      - mongo
+      - redis
+    networks:
+      - flexiwan-net
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # MongoDB for FlexiWAN
+  mongo:
+    image: mongo:6
+    container_name: flexiwan-mongo
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - flexiwan-net
+    restart: unless-stopped
+
+  # Redis for sessions
+  redis:
+    image: redis:7-alpine
+    container_name: flexiwan-redis
+    networks:
+      - flexiwan-net
+    restart: unless-stopped
+
+  # OSSO API (Rust)
+  osso-api:
+    build:
+      context: ../../opensase-core
+      dockerfile: ../docker/flexiwan-controller/Dockerfile.osso
+    container_name: osso-api
+    ports:
+      - "8080:8080"
+      - "50051:50051" # gRPC
+    environment:
+      - FLEXIWAN_URL=http://flexiwan-controller:3000
+      - FLEXIWAN_EMAIL=${FLEXIWAN_ADMIN_EMAIL:-admin@opensase.lab}
+      - FLEXIWAN_PASSWORD=${FLEXIWAN_ADMIN_PASSWORD:-}
+      - RUST_LOG=info
+    depends_on:
+      - flexiwan-controller
+    networks:
+      - flexiwan-net
+      - opensase-net
+    restart: unless-stopped
+
+networks:
+  flexiwan-net:
+    driver: bridge
+  opensase-net:
+    external: true
+
+volumes:
+  mongo-data:
