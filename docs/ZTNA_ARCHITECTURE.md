@@ -1,44 +1,53 @@
 # OpenSASE Zero Trust Access (OZTA)
 
-## Architecture
+## Access Request Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        ZERO TRUST ACCESS FLOW                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  User/Device ──► Identity ──► Context ──► Policy ──► Access                 │
-│       │              │            │           │          │                   │
-│       ▼              ▼            ▼           ▼          ▼                   │
-│  ┌─────────┐   ┌─────────┐  ┌─────────┐ ┌─────────┐ ┌────────┐             │
-│  │ Device  │   │  MFA    │  │  Risk   │ │  ABAC   │ │ Micro  │             │
-│  │ Trust   │   │  SSO    │  │ Scoring │ │  RBAC   │ │  Seg   │             │
-│  └─────────┘   └─────────┘  └─────────┘ └─────────┘ └────────┘             │
-│                                                                              │
-│                    CONTINUOUS MONITORING & EVALUATION                        │
-│                                                                              │
-│  ┌───────────────────────────────────────────────────────────────────────┐ │
-│  │  Session Monitor ←──► Risk Engine ←──► Policy Engine ←──► Session    │ │
-│  │                                                            Manager    │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────────────┘
+User Device ──→ [OpenSASE Client/Browser]
+│
+▼
+┌─────────────────────────────────────────────────────────────┐
+│                    TRUST EVALUATION ENGINE                   │
+│                                                               │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐          │
+│  │   Identity  │  │   Device    │  │   Context   │          │
+│  │   Verify    │  │   Posture   │  │   Analysis  │          │
+│  │   (IdP)     │  │   Check     │  │   (Risk)    │          │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘          │
+│         │                │                │                  │
+│         └────────────────┼────────────────┘                  │
+│                          │                                   │
+│                          ▼                                   │
+│               ┌─────────────────────┐                       │
+│               │   TRUST SCORE       │                       │
+│               │   0-100             │                       │
+│               └─────────────────────┘                       │
+└─────────────────────────────────────────────────────────────┘
+│
+▼
+┌─────────────────────────────────────────────────────────────┐
+│                    POLICY DECISION POINT                     │
+│                                                               │
+│  Trust Score + Requested Resource → Access Decision          │
+│                                                               │
+│  [ALLOW] [ALLOW + MFA] [ALLOW + SESSION RECORD] [DENY]      │
+└─────────────────────────────────────────────────────────────┘
+│
+▼
+┌─────────────────────────────────────────────────────────────┐
+│                    APPLICATION CONNECTOR                     │
+│                                                               │
+│  • Micro-tunnel to application                               │
+│  • Session binding                                           │
+│  • Activity logging                                          │
+│  • Data loss prevention                                      │
+└─────────────────────────────────────────────────────────────┘
+│
+▼
+Protected Application
 ```
 
 ---
-
-## Core Principles
-
-| Principle | Implementation |
-|-----------|----------------|
-| **Never Trust** | All access requires authentication |
-| **Always Verify** | Identity + Device + Context checked |
-| **Least Privilege** | RBAC/ABAC with minimal permissions |
-| **Assume Breach** | Continuous monitoring, micro-segmentation |
-| **Verify Explicitly** | Every request evaluated independently |
-
----
-
-## Module Summary (13 modules, ~4,000 lines)
 
 ### Identity & Authentication
 | Module | Purpose |

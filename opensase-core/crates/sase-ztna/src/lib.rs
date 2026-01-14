@@ -52,6 +52,10 @@ pub mod continuous;
 pub mod microseg;
 pub mod session;
 pub mod audit;
+pub mod trust;
+pub mod connector;
+pub mod activity;
+pub mod flow;
 
 // =============================================================================
 // Core Types
