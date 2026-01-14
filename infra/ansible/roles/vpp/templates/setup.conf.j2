@@ -1,0 +1,33 @@
+# VPP Interface Setup Script
+# Executed on VPP startup
+
+{% for iface in vpp_interfaces %}
+{% if iface.ip4 is defined %}
+# Configure {{ iface.name }}
+set interface state {{ iface.name }} up
+set interface ip address {{ iface.name }} {{ iface.ip4 }}
+{% if iface.gateway4 is defined %}
+ip route add 0.0.0.0/0 via {{ iface.gateway4 }}
+{% endif %}
+{% endif %}
+{% endfor %}
+
+# Enable hardware offloads
+{% for iface in vpp_interfaces %}
+set interface rx-mode {{ iface.name }} adaptive
+{% endfor %}
+
+# Configure NAT (if enabled)
+{% if nat_enabled | default(true) %}
+nat44 plugin enable sessions 131072
+{% for iface in vpp_interfaces if iface.type == 'uplink' %}
+set interface nat44 out {{ iface.name }} output-feature
+{% endfor %}
+{% endif %}
+
+# Configure ACL for security
+acl-plugin timeout udp idle 120
+acl-plugin timeout tcp idle 3600
+acl-plugin timeout tcp transient 120
+
+# WireGuard (configured dynamically by opensase-edge)

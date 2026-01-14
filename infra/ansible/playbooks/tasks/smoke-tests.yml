@@ -1,0 +1,111 @@
+# Smoke Tests - Post-Deployment Validation
+# Verifies all components are working
+
+---
+- name: Test VPP is responding
+  command: vppctl show version
+  register: vpp_test
+  failed_when: false
+  changed_when: false
+
+- name: Test VPP interfaces
+  command: vppctl show interface
+  register: vpp_interfaces
+  failed_when: false
+  changed_when: false
+  when: vpp_test.rc == 0
+
+- name: Test Suricata is running
+  systemd:
+    name: suricata
+    state: started
+  check_mode: true
+  register: suricata_status
+  failed_when: false
+  when: suricata_enabled | default(true)
+
+- name: Test BIRD BGP
+  command: birdc show protocols
+  register: bird_test
+  failed_when: false
+  changed_when: false
+  when: bird_enabled | default(true)
+
+- name: Test WireGuard tunnels
+  command: vppctl show wireguard interface
+  register: wg_test
+  failed_when: false
+  changed_when: false
+  when: wireguard_enabled | default(true)
+
+- name: Test Envoy is responding
+  uri:
+    url: "http://127.0.0.1:{{ envoy_admin_port | default(9901) }}/ready"
+    method: GET
+    timeout: 5
+  register: envoy_test
+  failed_when: false
+  when: envoy_enabled | default(true)
+
+- name: Test controller connectivity
+  uri:
+    url: "{{ controller_url }}/health"
+    method: GET
+    timeout: 10
+  register: controller_test
+  failed_when: false
+  when: controller_url is defined
+
+- name: Test Node Exporter metrics
+  uri:
+    url: "http://127.0.0.1:9100/metrics"
+    method: GET
+    timeout: 5
+  register: node_exporter_test
+  failed_when: false
+  when: monitoring_enabled | default(true)
+
+- name: Run interface throughput validation
+  command: vppctl show hardware-interfaces
+  register: hw_interfaces
+  changed_when: false
+  when: vpp_test.rc == 0
+
+- name: Generate smoke test report
+  set_fact:
+    smoke_test_results:
+      vpp: "{{ 'pass' if vpp_test.rc == 0 else 'fail' }}"
+      vpp_interfaces: "{{ 'pass' if vpp_interfaces is defined and vpp_interfaces.rc == 0 else 'skip' }}"
+      suricata: "{{ 'pass' if suricata_status is defined and not suricata_status.changed else 'skip' }}"
+      bird: "{{ 'pass' if bird_test is defined and bird_test.rc == 0 else 'skip' }}"
+      wireguard: "{{ 'pass' if wg_test is defined and wg_test.rc == 0 else 'skip' }}"
+      envoy: "{{ 'pass' if envoy_test is defined and envoy_test.status == 200 else 'skip' }}"
+      controller: "{{ 'pass' if controller_test is defined and controller_test.status == 200 else 'skip' }}"
+      node_exporter: "{{ 'pass' if node_exporter_test is defined and node_exporter_test.status == 200 else 'skip' }}"
+
+- name: Display smoke test results
+  debug:
+    msg: |
+      ==========================================
+      Smoke Test Results
+      ==========================================
+      VPP: {{ smoke_test_results.vpp }}
+      VPP Interfaces: {{ smoke_test_results.vpp_interfaces }}
+      Suricata: {{ smoke_test_results.suricata }}
+      BIRD BGP: {{ smoke_test_results.bird }}
+      WireGuard: {{ smoke_test_results.wireguard }}
+      Envoy: {{ smoke_test_results.envoy }}
+      Controller: {{ smoke_test_results.controller }}
+      Node Exporter: {{ smoke_test_results.node_exporter }}
+      ==========================================
+
+- name: Count failed tests
+  set_fact:
+    failed_tests: "{{ smoke_test_results.values() | select('equalto', 'fail') | list | length }}"
+
+- name: Fail if critical tests failed
+  fail:
+    msg: "Critical smoke tests failed: {{ smoke_test_results | dict2items | selectattr('value', 'equalto', 'fail') | map(attribute='key') | list }}"
+  when: 
+    - failed_tests | int > 0
+    - smoke_test_results.vpp == 'fail'

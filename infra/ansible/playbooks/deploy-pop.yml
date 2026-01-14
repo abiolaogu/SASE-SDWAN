@@ -1,131 +1,202 @@
-# OpenSASE Ansible Main Playbook
-# Complete PoP configuration
+# Deploy OpenSASE PoP - Enhanced Playbook
+# One-command deployment with full validation
+#
+# Usage: ansible-playbook playbooks/deploy-pop.yml -e pop_name=nyc1
 
 ---
-- name: OpenSASE PoP Configuration
-  hosts: pop_nodes
-  become: yes
+- name: Deploy OpenSASE PoP
+  hosts: "{{ pop_name }}"
+  become: true
+  gather_facts: true
+  
   vars:
-    opensase_version: "1.0.0"
-    vpp_version: "23.10"
-    flexiwan_version: "latest"
+    deployment_id: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+    controller_url: "{{ controller_url | default('https://api.opensase.io') }}"
     
-  tasks:
-    # ===========================================
-    # Pre-flight Checks
-    # ===========================================
+  pre_tasks:
+    - name: Record deployment start
+      set_fact:
+        deployment_start: "{{ ansible_date_time.iso8601 }}"
     
-    - name: Gather facts
-      setup:
-        gather_subset:
-          - hardware
-          - network
-    
-    - name: Verify minimum requirements
-      assert:
-        that:
-          - ansible_memtotal_mb >= 8192
-          - ansible_processor_vcpus >= 4
-        fail_msg: "Minimum requirements not met: 8GB RAM, 4 vCPUs"
-    
-    # ===========================================
-    # System Configuration
-    # ===========================================
-    
-    - name: Configure hostname
-      hostname:
-        name: "{{ pop_name }}"
-    
-    - name: Update /etc/hosts
-      lineinfile:
-        path: /etc/hosts
-        line: "127.0.0.1 {{ pop_name }}"
-        state: present
-    
-    - name: Configure timezone
-      timezone:
-        name: UTC
-    
-    - name: Configure sysctl for VPP
-      sysctl:
-        name: "{{ item.key }}"
-        value: "{{ item.value }}"
-        state: present
-        reload: yes
-      loop: "{{ sysctl_settings | dict2items }}"
-      vars:
-        sysctl_settings:
-          vm.nr_hugepages: 1024
-          vm.hugetlb_shm_group: 0
-          net.core.rmem_max: 134217728
-          net.core.wmem_max: 134217728
-          net.core.netdev_max_backlog: 250000
-          net.ipv4.ip_forward: 1
-    
-    # ===========================================
-    # VPP Role
-    # ===========================================
-    
-    - name: Include VPP role
-      include_role:
-        name: vpp
-    
-    # ===========================================
-    # FlexiEdge Role
-    # ===========================================
-    
-    - name: Include FlexiEdge role
-      include_role:
-        name: flexiedge
-    
-    # ===========================================
-    # Suricata Role
-    # ===========================================
-    
-    - name: Include Suricata role
-      include_role:
-        name: suricata
-    
-    # ===========================================
-    # Monitoring Role
-    # ===========================================
-    
-    - name: Include Monitoring role
-      include_role:
-        name: monitoring
-    
-    # ===========================================
-    # Health Check
-    # ===========================================
-    
-    - name: Wait for services to be ready
-      wait_for:
-        port: "{{ item.port }}"
-        host: 127.0.0.1
-        timeout: 60
-      loop:
-        - { port: 8080, name: "Health API" }
-        - { port: 9100, name: "Node Exporter" }
-    
-    - name: Verify health endpoint
-      uri:
-        url: http://127.0.0.1:8080/health
-        return_content: yes
-      register: health_check
-      until: health_check.json.status == 'healthy'
-      retries: 10
-      delay: 10
-    
-    - name: Print deployment summary
+    - name: Display deployment info
       debug:
         msg: |
-          ============================================
-          OpenSASE PoP Deployment Complete!
-          ============================================
-          PoP Name:    {{ pop_name }}
-          Host:        {{ ansible_hostname }}
-          IP:          {{ ansible_default_ipv4.address }}
-          VPP:         {{ vpp_version }}
-          FlexiWAN:    {{ flexiwan_version }}
-          Health:      {{ health_check.json.status }}
-          ============================================
+          ==========================================
+          OpenSASE PoP Deployment
+          ==========================================
+          Deployment ID: {{ deployment_id }}
+          PoP Name: {{ pop_name }}
+          Host: {{ inventory_hostname }}
+          Time: {{ deployment_start }}
+          ==========================================
+    
+    - name: Validate target host - Memory
+      assert:
+        that:
+          - ansible_memtotal_mb >= 65536
+        fail_msg: "Host requires at least 64GB RAM (found: {{ ansible_memtotal_mb }}MB)"
+    
+    - name: Validate target host - CPU
+      assert:
+        that:
+          - ansible_processor_vcpus >= 16
+        fail_msg: "Host requires at least 16 vCPUs (found: {{ ansible_processor_vcpus }})"
+    
+    - name: Check for DPDK-compatible NICs
+      shell: lspci | grep -E "(X710|XXV710|ConnectX-5|ConnectX-6|E810)"
+      register: dpdk_nics
+      failed_when: false
+      changed_when: false
+    
+    - name: Validate DPDK NICs present
+      assert:
+        that:
+          - dpdk_nics.stdout_lines | length >= 1
+        fail_msg: "No DPDK-compatible NICs found (Intel X710/XXV710/E810 or Mellanox ConnectX-5/6)"
+      when: vpp_enabled | default(true)
+    
+    - name: Display detected NICs
+      debug:
+        msg: "Detected {{ dpdk_nics.stdout_lines | length }} DPDK-compatible NIC(s)"
+      when: dpdk_nics.stdout_lines | length > 0
+
+  roles:
+    # Phase 1: Base System (2 min)
+    - role: common
+      tags: [common, base]
+    
+    # Phase 2: Kernel/DPDK (2 min)
+    - role: kernel
+      tags: [kernel, tuning]
+    
+    - role: dpdk
+      tags: [dpdk, dataplane]
+      when: vpp_enabled | default(true)
+    
+    # Phase 3: VPP Data Plane (4 min)
+    - role: vpp
+      tags: [vpp, dataplane]
+      vars:
+        vpp_workers: "{{ ansible_processor_vcpus - 4 }}"
+        vpp_hugepages: 8192
+      when: vpp_enabled | default(true)
+    
+    # Phase 4: Networking (2 min)
+    - role: wireguard
+      tags: [wireguard, tunnels]
+      when: wireguard_enabled | default(true)
+    
+    - role: bird
+      tags: [bird, bgp]
+      when: bird_enabled | default(true)
+    
+    # Phase 5: Security (2 min)
+    - role: suricata
+      tags: [suricata, security]
+      when: suricata_enabled | default(true)
+    
+    - role: security
+      tags: [security, firewall]
+    
+    # Phase 6: L7 Proxy (1 min)
+    - role: envoy
+      tags: [envoy, l7]
+      when: envoy_enabled | default(true)
+    
+    # Phase 7: SD-WAN (1 min)
+    - role: flexiwan
+      tags: [flexiwan, sdwan]
+      when: flexiwan_enabled | default(true)
+    
+    # Phase 8: Kubernetes (optional)
+    - role: kubernetes
+      tags: [k8s, controlplane]
+      when: kubernetes_enabled | default(false)
+    
+    - role: cilium
+      tags: [cilium, cni]
+      when: kubernetes_enabled | default(false)
+    
+    # Phase 9: Monitoring (1 min)
+    - role: monitoring
+      tags: [monitoring, observability]
+      when: monitoring_enabled | default(true)
+    
+    # Phase 10: OpenSASE Edge (1 min)
+    - role: opensase-edge
+      tags: [edge, opensase]
+
+  post_tasks:
+    - name: Run smoke tests
+      include_tasks: tasks/smoke-tests.yml
+      tags: [tests, validate]
+    
+    - name: Register with controller
+      uri:
+        url: "{{ controller_url }}/api/v1/pops/register"
+        method: POST
+        body_format: json
+        body:
+          pop_name: "{{ pop_name }}"
+          activation_key: "{{ activation_key | default('') }}"
+          public_ip: "{{ ansible_default_ipv4.address }}"
+          region: "{{ pop_region | default('unknown') }}"
+          capabilities:
+            vpp_version: "{{ vpp_version | default('unknown') }}"
+            throughput_gbps: 100
+            ips_enabled: "{{ suricata_enabled | default(true) }}"
+            bgp_enabled: "{{ bird_enabled | default(true) }}"
+        status_code: [200, 201]
+        timeout: 30
+      register: registration
+      when: activation_key is defined
+      ignore_errors: true
+    
+    - name: Calculate deployment duration
+      set_fact:
+        deployment_end: "{{ ansible_date_time.iso8601 }}"
+        deployment_duration_seconds: "{{ (ansible_date_time.epoch | int) - (deployment_start | regex_replace('.*T', '') | regex_replace(':.*', '') | int) }}"
+    
+    - name: Save deployment report
+      copy:
+        content: |
+          {
+            "deployment_id": "{{ deployment_id }}",
+            "pop_name": "{{ pop_name }}",
+            "hostname": "{{ inventory_hostname }}",
+            "started_at": "{{ deployment_start }}",
+            "completed_at": "{{ deployment_end }}",
+            "public_ip": "{{ ansible_default_ipv4.address }}",
+            "vpp_version": "{{ vpp_version | default('unknown') }}",
+            "smoke_tests": {{ smoke_test_results | default({}) | to_json }},
+            "registration": "{{ 'success' if registration is defined and registration.status == 201 else 'pending' }}"
+          }
+        dest: "/var/log/opensase/deployment-{{ deployment_id }}.json"
+    
+    - name: Display deployment summary
+      debug:
+        msg: |
+          ==========================================
+          Deployment Complete!
+          ==========================================
+          PoP: {{ pop_name }}
+          IP: {{ ansible_default_ipv4.address }}
+          Start: {{ deployment_start }}
+          End: {{ deployment_end }}
+          Smoke Tests: {{ 'PASSED' if smoke_test_results is defined and 'fail' not in smoke_test_results.values() else 'FAILED' }}
+          ==========================================
+
+  handlers:
+    - name: Restart VPP
+      systemd:
+        name: vpp
+        state: restarted
+    
+    - name: Reload systemd
+      systemd:
+        daemon_reload: true
+    
+    - name: Restart BIRD
+      systemd:
+        name: bird
+        state: restarted

@@ -1,0 +1,77 @@
+# Verify PoP Deployment Playbook
+# Run after deployment to validate all components
+
+---
+- name: Verify OpenSASE PoP Deployment
+  hosts: "{{ pop_name }}"
+  become: true
+  gather_facts: true
+  
+  tasks:
+    - name: Include smoke tests
+      include_tasks: tasks/smoke-tests.yml
+    
+    - name: Check all services
+      systemd:
+        name: "{{ item }}"
+        state: started
+      check_mode: true
+      loop:
+        - vpp
+        - bird
+        - suricata
+        - envoy
+        - opensase-edge
+        - node_exporter
+      register: services_check
+      ignore_errors: true
+    
+    - name: Gather service status
+      set_fact:
+        service_status: "{{ service_status | default({}) | combine({item.item: 'running' if not item.changed else 'stopped'}) }}"
+      loop: "{{ services_check.results }}"
+      when: item.item is defined
+    
+    - name: Check VPP interfaces count
+      command: vppctl show interface | grep -c "^"
+      register: vpp_iface_count
+      changed_when: false
+      ignore_errors: true
+    
+    - name: Check BGP session count
+      command: birdc show protocols | grep -c Established
+      register: bgp_session_count
+      changed_when: false
+      ignore_errors: true
+    
+    - name: Check disk usage
+      command: df -h /
+      register: disk_usage
+      changed_when: false
+    
+    - name: Check memory usage
+      command: free -h
+      register: memory_usage
+      changed_when: false
+    
+    - name: Generate verification report
+      debug:
+        msg: |
+          ==========================================
+          PoP Verification Report
+          ==========================================
+          Host: {{ inventory_hostname }}
+          PoP: {{ pop_name }}
+          
+          Service Status:
+          {{ service_status | to_nice_yaml }}
+          
+          VPP Interfaces: {{ vpp_iface_count.stdout | default('0') }}
+          BGP Sessions Established: {{ bgp_session_count.stdout | default('0') }}
+          
+          Disk Usage:
+          {{ disk_usage.stdout }}
+          
+          Memory Usage:
+          {{ memory_usage.stdout }}
+          ==========================================
