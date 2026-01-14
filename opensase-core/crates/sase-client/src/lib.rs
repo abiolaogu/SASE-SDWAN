@@ -53,6 +53,8 @@ pub mod intercept;
 pub mod diagnostics;
 pub mod power;
 pub mod keychain;
+pub mod gateway;
+pub mod wireguard;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;
