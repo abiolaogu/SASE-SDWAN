@@ -54,6 +54,9 @@ pub mod mitre;
 pub mod distribution;
 pub mod sources;
 pub mod sinkhole;
+pub mod matching;
+pub mod hunting;
+pub mod api;
 
 // =============================================================================
 // Indicator of Compromise (IoC) Types
