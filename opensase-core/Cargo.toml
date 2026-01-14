@@ -25,6 +25,8 @@ members = [
     "crates/sase-xds",
     "crates/sase-l7",
     "crates/sase-sdwan",
+    "crates/sase-ztna",
+    "crates/sase-soc",
 ]
 
 [workspace.package]
