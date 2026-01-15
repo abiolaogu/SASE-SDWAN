@@ -39,6 +39,8 @@ members = [
     "crates/sase-marketing",
     "crates/sase-forms",
     "crates/sase-scheduling",
+    # SDK
+    "crates/opensase-sdk",
 ]
 
 [workspace.package]
