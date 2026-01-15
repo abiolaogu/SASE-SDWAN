@@ -39,6 +39,9 @@ pub mod limits;
 pub mod identity;
 pub mod billing;
 pub mod lifecycle;
+pub mod entitlements;
+pub mod metering;
+pub mod catalog;
 
 pub use model::{Tenant, TenantTier, TenantId, TenantRole, ResourceLimits};
 pub use isolation::IsolationEngine;

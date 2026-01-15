@@ -12,6 +12,7 @@ serde.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 parking_lot.workspace = true
+chrono.workspace = true
 
 # ML inference (optional, for when ONNX is available)
 # ort = { workspace = true, optional = true }

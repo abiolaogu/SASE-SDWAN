@@ -12,6 +12,7 @@
 pub mod path_predictor;
 pub mod anomaly;
 pub mod features;
+pub mod prediction;
 
 pub use path_predictor::PathPredictor;
 pub use anomaly::AnomalyDetector;

@@ -51,6 +51,7 @@ pub mod backbone;
 pub mod config;
 pub mod cost;
 pub mod capacity;
+pub mod saga;
 
 pub use pop::{PopDefinition, PopTier, Region, CapacitySpec};
 pub use provider::{DedicatedProvider, CloudProvider};  // CloudProvider is alias for backwards compat
