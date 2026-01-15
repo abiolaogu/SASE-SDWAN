@@ -30,6 +30,15 @@ members = [
     "crates/sase-client",
     "crates/sase-apigw",
     "crates/sase-cloud-connector",
+    # Self-hosted platforms (Prompts 75-82)
+    "crates/sase-crm",
+    "crates/sase-support",
+    "crates/sase-ecommerce",
+    "crates/sase-payments",
+    "crates/sase-hr",
+    "crates/sase-marketing",
+    "crates/sase-forms",
+    "crates/sase-scheduling",
 ]
 
 [workspace.package]
