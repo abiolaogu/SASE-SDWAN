@@ -152,25 +152,18 @@ impl WireGuardEngine {
     #[cfg(target_os = "macos")]
     async fn start_macos(&self, config: &WireGuardConfig) -> Result<(), WireGuardError> {
         let wg_config = self.generate_wg_config(config);
-        let config_path = std::path::Path::new("/etc/wireguard/opensase.conf");
         
-        // Need root privileges
-        let output = tokio::process::Command::new("sudo")
-            .args(["tee", "/etc/wireguard/opensase.conf"])
-            .stdin(std::process::Stdio::piped())
-            .spawn()
-            .and_then(|mut child| {
-                use std::io::Write;
-                if let Some(stdin) = child.stdin.as_mut() {
-                    stdin.write_all(wg_config.as_bytes())?;
-                }
-                Ok(())
-            })
+        // Create config directory if needed
+        let _ = tokio::fs::create_dir_all("/etc/wireguard").await;
+        
+        // Write config file (requires root)
+        tokio::fs::write("/etc/wireguard/opensase.conf", &wg_config)
+            .await
             .map_err(|e| WireGuardError::ConfigError(e.to_string()))?;
         
         // Start with wg-quick
-        let output = tokio::process::Command::new("sudo")
-            .args(["wg-quick", "up", "opensase"])
+        let output = tokio::process::Command::new("wg-quick")
+            .args(["up", "opensase"])
             .output()
             .await
             .map_err(|e| WireGuardError::StartError(e.to_string()))?;

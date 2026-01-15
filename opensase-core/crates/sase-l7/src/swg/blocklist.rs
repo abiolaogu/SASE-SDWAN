@@ -91,12 +91,9 @@ impl BlocklistManager {
     
     /// Load from blocklist sources
     pub async fn load_from_sources(&self) {
-        let sources = vec![
-            ("malware", include_str!("../../../data/blocklists/malware.txt").lines()),
-            ("phishing", include_str!("../../../data/blocklists/phishing.txt").lines()),
-        ];
-        
-        // Note: In production, would fetch from URLs
+        // In production, would fetch from URLs like:
+        // - https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-domains.txt
+        // - https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
         // For now, use inline defaults
         self.load_defaults();
     }

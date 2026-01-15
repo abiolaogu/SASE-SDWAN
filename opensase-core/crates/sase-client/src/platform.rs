@@ -144,7 +144,8 @@ impl PlatformOps for MacOsPlatform {
     }
     
     fn is_elevated(&self) -> bool {
-        nix::unistd::geteuid().is_root()
+        // Check if running as root
+        unsafe { libc::geteuid() == 0 }
     }
     
     async fn request_elevation(&self) -> Result<(), PlatformError> {
@@ -210,7 +211,8 @@ impl PlatformOps for LinuxPlatform {
     }
     
     fn is_elevated(&self) -> bool {
-        nix::unistd::geteuid().is_root()
+        // Check if running as root
+        unsafe { libc::geteuid() == 0 }
     }
     
     async fn request_elevation(&self) -> Result<(), PlatformError> {

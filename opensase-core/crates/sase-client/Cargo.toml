@@ -43,6 +43,12 @@ hmac = "0.12"
 sysinfo = "0.30"
 hostname = "0.3"
 
+# URL handling
+url = "2"
+
+# Directory paths
+dirs = "5"
+
 # Platform-specific
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.52", features = ["Win32_System_Registry", "Win32_Security", "Win32_NetworkManagement_IpHelper"] }
@@ -51,9 +57,10 @@ winreg = "0.52"
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "2"
 core-foundation = "0.9"
+libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-nix = { version = "0.27", features = ["net", "user"] }
+libc = "0.2"
 
 [target.'cfg(any(target_os = "ios", target_os = "android"))'.dependencies]
 # Mobile-specific deps handled via FFI

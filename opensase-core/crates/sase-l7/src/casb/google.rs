@@ -91,9 +91,13 @@ impl SaaSConnector for GoogleWorkspaceConnector {
             let events = item.events.unwrap_or_default();
             let first_event = events.first();
             
+            let activity_id = item.id.unwrap_or_default();
+            let unique_id = activity_id.unique_qualifier.clone().unwrap_or_default();
+            let timestamp = activity_id.time.unwrap_or_else(Utc::now);
+            
             AuditEvent {
-                id: item.id.unwrap_or_default().unique_qualifier.unwrap_or_default(),
-                timestamp: item.id.and_then(|i| i.time).unwrap_or_else(Utc::now),
+                id: unique_id,
+                timestamp,
                 user_id: item.actor.as_ref().and_then(|a| a.profile_id.clone()).unwrap_or_default(),
                 user_email: item.actor.as_ref().and_then(|a| a.email.clone()).unwrap_or_default(),
                 action: first_event.map(|e| e.name.clone()).unwrap_or_default(),
@@ -211,7 +215,7 @@ struct ActivityItem {
     events: Option<Vec<Event>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ActivityId {
     time: Option<DateTime<Utc>>,

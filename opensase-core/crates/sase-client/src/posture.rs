@@ -141,17 +141,10 @@ impl PostureCollector {
     }
     
     async fn collect_disk_posture(&self) -> DiskPosture {
-        let mut sys = sysinfo::System::new_all();
-        sys.refresh_disks_list();
+        let disks = sysinfo::Disks::new_with_refreshed_list();
         
-        let total: u64 = sysinfo::Disks::new_with_refreshed_list()
-            .iter()
-            .map(|d| d.total_space())
-            .sum();
-        let free: u64 = sysinfo::Disks::new_with_refreshed_list()
-            .iter()
-            .map(|d| d.available_space())
-            .sum();
+        let total: u64 = disks.iter().map(|d| d.total_space()).sum();
+        let free: u64 = disks.iter().map(|d| d.available_space()).sum();
         
         DiskPosture {
             total_gb: total / 1024 / 1024 / 1024,

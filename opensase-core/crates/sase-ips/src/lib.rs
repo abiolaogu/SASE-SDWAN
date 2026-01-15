@@ -64,10 +64,11 @@ pub enum ActionType {
 }
 
 /// Rule severity levels
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Severity {
     Informational = 0,
     Low = 1,
+    #[default]
     Medium = 2,
     High = 3,
     Critical = 4,

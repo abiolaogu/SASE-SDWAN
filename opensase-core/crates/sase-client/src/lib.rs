@@ -225,31 +225,37 @@ impl SaseClient {
         let tunnel_config = self.auth.get_tunnel_config(&auth_result.token).await
             .map_err(|e| ClientError::ConfigFailed(e.to_string()))?;
         
+        // Clone fields we need after moving tunnel_config
+        let dns_servers = tunnel_config.dns_servers.clone();
+        let policies = tunnel_config.policies.clone();
+        let server_endpoint = tunnel_config.server_endpoint.clone();
+        let client_ip = tunnel_config.client_ip.clone();
+        
         // Step 4: Establish tunnel
         self.tunnel.connect(tunnel_config).await
             .map_err(|e| ClientError::TunnelFailed(e.to_string()))?;
         
         // Step 5: Configure DNS
         if self.config.features.dns_protection {
-            self.dns.configure(&tunnel_config.dns_servers).await?;
+            self.dns.configure(&dns_servers).await?;
         }
         
         // Step 6: Apply policies
-        self.policy.apply(&tunnel_config.policies).await?;
+        self.policy.apply(&policies).await?;
         
         // Update status
         {
             let mut status = self.status.write();
             status.state = ClientState::Connected;
             status.connected_at = Some(Utc::now());
-            status.server_ip = Some(tunnel_config.server_endpoint.clone());
-            status.client_ip = Some(tunnel_config.client_ip.clone());
+            status.server_ip = Some(server_endpoint.clone());
+            status.client_ip = Some(client_ip.clone());
         }
         
         self.set_state(ClientState::Connected);
         self.emit_event(ClientEvent::Connected {
-            server: tunnel_config.server_endpoint,
-            client_ip: tunnel_config.client_ip,
+            server: server_endpoint,
+            client_ip,
         });
         
         // Start keepalive task
@@ -340,6 +346,12 @@ pub enum ClientError {
     
     #[error("Platform error: {0}")]
     PlatformError(String),
+}
+
+impl From<tunnel::TunnelError> for ClientError {
+    fn from(e: tunnel::TunnelError) -> Self {
+        ClientError::TunnelFailed(e.to_string())
+    }
 }
 
 // =============================================================================

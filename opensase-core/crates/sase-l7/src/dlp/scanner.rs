@@ -70,7 +70,7 @@ impl DlpScanner {
                 Severity::Critical
             ),
             PatternType::ApiKey => (
-                r"(?i)(api[_-]?key|apikey|secret[_-]?key)['\"]?\s*[:=]\s*['\"]?[\w\-]{20,}",
+                r#"(?i)(api[_-]?key|apikey|secret[_-]?key)['"]?\s*[:=]\s*['"]?[\w\-]{20,}"#,
                 Severity::High
             ),
             PatternType::AwsKey => (
