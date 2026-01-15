@@ -16,3 +16,4 @@ uuid = { version = "1", features = ["v4", "serde"] }
 thiserror = "1.0"
 tracing = "0.1"
 dashmap = "5.5"
+rust_decimal = { version = "1.36", features = ["serde"] }
