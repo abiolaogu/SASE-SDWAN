@@ -47,3 +47,6 @@ pub use model::{Tenant, TenantTier, TenantId, TenantRole, ResourceLimits};
 pub use isolation::IsolationEngine;
 pub use limits::QuotaEnforcer;
 pub use identity::IdentityManager;
+pub use entitlements::{SaseFeature, SubscriptionTier, Entitlements};
+pub use metering::{UsageMetric, UsageRecord, UsageMeter};
+pub use catalog::{ServiceCatalog, SaseServiceOffering, ServiceCart};
