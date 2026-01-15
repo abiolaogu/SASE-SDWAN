@@ -1,0 +1,1544 @@
+  # CRM - Contacts
+  /crm/contacts:
+    get:
+      tags:
+        - CRM
+      summary: List contacts
+      description: Retrieve a paginated list of contacts with filtering options
+      operationId: listContacts
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - $ref: '#/components/parameters/SearchParam'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [new, contacted, qualified, unqualified]
+        - name: owner_id
+          in: query
+          schema:
+            type: string
+        - name: account_id
+          in: query
+          schema:
+            type: string
+        - name: tags
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of tags
+        - name: created_after
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [lead_score, created_at, last_activity_at, name]
+            default: created_at
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Contact'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+    post:
+      tags:
+        - CRM
+      summary: Create contact
+      description: Create a new contact
+      operationId: createContact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactCreate'
+      responses:
+        '201':
+          description: Contact created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Contact'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /crm/contacts/{contact_id}:
+    parameters:
+      - name: contact_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Contact ID
+
+    get:
+      tags:
+        - CRM
+      summary: Get contact
+      description: Retrieve a specific contact by ID
+      operationId: getContact
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Contact'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - CRM
+      summary: Update contact
+      description: Update an existing contact
+      operationId: updateContact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContactUpdate'
+      responses:
+        '200':
+          description: Contact updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Contact'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - CRM
+      summary: Delete contact
+      description: Delete a contact
+      operationId: deleteContact
+      responses:
+        '204':
+          description: Contact deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /crm/contacts/{contact_id}/360:
+    parameters:
+      - name: contact_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Contact ID
+
+    get:
+      tags:
+        - CRM
+      summary: Get 360° contact view
+      description: Retrieve comprehensive contact information including deals, activities, and insights
+      operationId: getContact360
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Contact360View'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # CRM - Deals
+  /crm/deals:
+    get:
+      tags:
+        - CRM
+      summary: List deals
+      description: Retrieve a paginated list of deals
+      operationId: listDeals
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - name: pipeline_id
+          in: query
+          schema:
+            type: string
+        - name: stage_id
+          in: query
+          schema:
+            type: string
+        - name: owner_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, won, lost]
+        - name: min_amount
+          in: query
+          schema:
+            type: number
+        - name: max_amount
+          in: query
+          schema:
+            type: number
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Deal'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - CRM
+      summary: Create deal
+      description: Create a new deal
+      operationId: createDeal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DealCreate'
+      responses:
+        '201':
+          description: Deal created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Deal'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /crm/deals/{deal_id}:
+    parameters:
+      - name: deal_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Deal ID
+
+    get:
+      tags:
+        - CRM
+      summary: Get deal
+      description: Retrieve a specific deal by ID
+      operationId: getDeal
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Deal'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - CRM
+      summary: Update deal
+      description: Update an existing deal
+      operationId: updateDeal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DealUpdate'
+      responses:
+        '200':
+          description: Deal updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Deal'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /crm/deals/{deal_id}/move:
+    parameters:
+      - name: deal_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Deal ID
+
+    post:
+      tags:
+        - CRM
+      summary: Move deal to stage
+      description: Move a deal to a different stage
+      operationId: moveDealStage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - stage_id
+              properties:
+                stage_id:
+                  type: string
+                note:
+                  type: string
+                  maxLength: 1000
+      responses:
+        '200':
+          description: Deal moved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Deal'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /crm/pipelines/{pipeline_id}/view:
+    parameters:
+      - name: pipeline_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Pipeline ID
+
+    get:
+      tags:
+        - CRM
+      summary: Get pipeline view
+      description: Retrieve pipeline with all stages and deals
+      operationId: getPipelineView
+      parameters:
+        - name: owner_id
+          in: query
+          schema:
+            type: string
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [this_month, this_quarter, this_year, custom]
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PipelineView'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Payments - Payment Intents
+  /payments/intents:
+    get:
+      tags:
+        - Payments
+      summary: List payment intents
+      description: Retrieve a paginated list of payment intents
+      operationId: listPaymentIntents
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - name: customer_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [requires_payment_method, requires_confirmation, requires_action, processing, succeeded, canceled]
+        - name: created_after
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: created_before
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PaymentIntent'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Payments
+      summary: Create payment intent
+      description: Create a new payment intent
+      operationId: createPaymentIntent
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentIntentCreate'
+      responses:
+        '201':
+          description: Payment intent created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentIntent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /payments/intents/{intent_id}:
+    parameters:
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Payment Intent ID
+
+    get:
+      tags:
+        - Payments
+      summary: Get payment intent
+      description: Retrieve a specific payment intent by ID
+      operationId: getPaymentIntent
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentIntent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments/intents/{intent_id}/confirm:
+    parameters:
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Payment Intent ID
+
+    post:
+      tags:
+        - Payments
+      summary: Confirm payment intent
+      description: Confirm a payment intent with a payment method
+      operationId: confirmPaymentIntent
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - payment_method_id
+              properties:
+                payment_method_id:
+                  type: string
+                return_url:
+                  type: string
+                  format: uri
+                  description: URL to redirect after 3DS authentication
+      responses:
+        '200':
+          description: Payment confirmed or requires action
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentIntent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments/intents/{intent_id}/capture:
+    parameters:
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Payment Intent ID
+
+    post:
+      tags:
+        - Payments
+      summary: Capture payment intent
+      description: Capture a previously authorized payment
+      operationId: capturePaymentIntent
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount_to_capture:
+                  type: integer
+                  minimum: 1
+                  description: Amount to capture in cents (defaults to full amount)
+      responses:
+        '200':
+          description: Payment captured successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentIntent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments/intents/{intent_id}/cancel:
+    parameters:
+      - name: intent_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Payment Intent ID
+
+    post:
+      tags:
+        - Payments
+      summary: Cancel payment intent
+      description: Cancel a payment intent
+      operationId: cancelPaymentIntent
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cancellation_reason:
+                  type: string
+                  enum: [duplicate, fraudulent, requested_by_customer, abandoned]
+      responses:
+        '200':
+          description: Payment canceled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/PaymentIntent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Payments - Refunds
+  /payments/refunds:
+    post:
+      tags:
+        - Payments
+      summary: Create refund
+      description: Create a refund for a payment
+      operationId: createRefund
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundCreate'
+      responses:
+        '201':
+          description: Refund created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Refund'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Payments - Subscriptions
+  /payments/subscriptions:
+    get:
+      tags:
+        - Payments
+      summary: List subscriptions
+      description: Retrieve a paginated list of subscriptions
+      operationId: listSubscriptions
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PerPageParam'
+        - name: customer_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, past_due, unpaid, canceled, incomplete, incomplete_expired, trialing, paused]
+        - name: plan_id
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Subscription'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Payments
+      summary: Create subscription
+      description: Create a new subscription
+      operationId: createSubscription
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionCreate'
+      responses:
+        '201':
+          description: Subscription created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Subscription'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /payments/subscriptions/{subscription_id}:
+    parameters:
+      - name: subscription_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Subscription ID
+
+    get:
+      tags:
+        - Payments
+      summary: Get subscription
+      description: Retrieve a specific subscription by ID
+      operationId: getSubscription
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Subscription'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - Payments
+      summary: Update subscription
+      description: Update an existing subscription
+      operationId: updateSubscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionUpdate'
+      responses:
+        '200':
+          description: Subscription updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Subscription'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /payments/subscriptions/{subscription_id}/cancel:
+    parameters:
+      - name: subscription_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Subscription ID
+
+    post:
+      tags:
+        - Payments
+      summary: Cancel subscription
+      description: Cancel a subscription
+      operationId: cancelSubscription
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cancel_at_period_end:
+                  type: boolean
+                  default: true
+                  description: If true, cancel at end of billing period
+                cancellation_reason:
+                  type: string
+                  maxLength: 500
+      responses:
+        '200':
+          description: Subscription canceled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Subscription'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # Additional CRM and Payment schemas
+  schemas_crm_payments:
+    Contact:
+      type: object
+      properties:
+        id:
+          type: string
+          example: contact_abc123
+        first_name:
+          type: string
+          example: John
+        last_name:
+          type: string
+          example: Smith
+        email:
+          type: string
+          format: email
+          example: john.smith@acme.com
+        phone:
+          type: string
+          example: '+1-555-123-4567'
+        mobile:
+          type: string
+          example: '+1-555-987-6543'
+        title:
+          type: string
+          example: VP of Engineering
+        department:
+          type: string
+          example: Engineering
+        account:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        owner:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        lead_source:
+          type: string
+          example: Website
+        lead_status:
+          type: string
+          enum: [new, contacted, qualified, unqualified]
+        lead_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          example: 85
+        lifecycle_stage:
+          type: string
+          enum: [subscriber, lead, mql, sql, opportunity, customer, evangelist]
+        address:
+          $ref: '#/components/schemas/Address'
+        social_profiles:
+          type: object
+          properties:
+            linkedin:
+              type: string
+              format: uri
+            twitter:
+              type: string
+        tags:
+          type: array
+          items:
+            type: string
+        custom_fields:
+          type: object
+          additionalProperties: true
+        last_activity_at:
+          $ref: '#/components/schemas/Timestamp'
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+
+    ContactCreate:
+      type: object
+      required:
+        - email
+      properties:
+        first_name:
+          type: string
+          maxLength: 100
+        last_name:
+          type: string
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        mobile:
+          type: string
+        title:
+          type: string
+          maxLength: 200
+        company_name:
+          type: string
+          maxLength: 200
+          description: Creates account if not exists
+        lead_source:
+          type: string
+        owner_id:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        custom_fields:
+          type: object
+          additionalProperties: true
+
+    ContactUpdate:
+      type: object
+      properties:
+        first_name:
+          type: string
+          maxLength: 100
+        last_name:
+          type: string
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        mobile:
+          type: string
+        title:
+          type: string
+          maxLength: 200
+        lead_status:
+          type: string
+          enum: [new, contacted, qualified, unqualified]
+        owner_id:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        custom_fields:
+          type: object
+          additionalProperties: true
+
+    Contact360View:
+      type: object
+      properties:
+        contact:
+          $ref: '#/components/schemas/Contact'
+        account:
+          type: object
+        deals:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deal'
+        activities:
+          type: array
+          items:
+            type: object
+        emails:
+          type: array
+          items:
+            type: object
+        notes:
+          type: array
+          items:
+            type: object
+        tasks:
+          type: array
+          items:
+            type: object
+        engagement_score:
+          type: integer
+        insights:
+          type: object
+          properties:
+            ai_summary:
+              type: string
+            recommended_actions:
+              type: array
+              items:
+                type: string
+            risk_factors:
+              type: array
+              items:
+                type: string
+
+    Deal:
+      type: object
+      properties:
+        id:
+          type: string
+          example: deal_xyz789
+        name:
+          type: string
+          example: Enterprise License - Acme Corp
+        amount:
+          type: number
+          example: 75000
+        currency:
+          type: string
+          example: USD
+        pipeline:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        stage:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            probability:
+              type: number
+              minimum: 0
+              maximum: 1
+        contact:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        account:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        owner:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        expected_close_date:
+          type: string
+          format: date
+        probability:
+          type: number
+          minimum: 0
+          maximum: 1
+        weighted_value:
+          type: number
+        deal_type:
+          type: string
+          enum: [new_business, renewal, upsell, cross_sell]
+        lead_source:
+          type: string
+        competitors:
+          type: array
+          items:
+            type: string
+        custom_fields:
+          type: object
+          additionalProperties: true
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+        updated_at:
+          $ref: '#/components/schemas/Timestamp'
+
+    DealCreate:
+      type: object
+      required:
+        - name
+        - amount
+        - pipeline_id
+        - stage_id
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        amount:
+          type: number
+          minimum: 0
+        currency:
+          type: string
+          default: USD
+        pipeline_id:
+          type: string
+        stage_id:
+          type: string
+        contact_id:
+          type: string
+        account_id:
+          type: string
+        expected_close_date:
+          type: string
+          format: date
+        deal_type:
+          type: string
+          enum: [new_business, renewal, upsell, cross_sell]
+        lead_source:
+          type: string
+        competitors:
+          type: array
+          items:
+            type: string
+        products:
+          type: array
+          items:
+            type: object
+            properties:
+              product_id:
+                type: string
+              quantity:
+                type: integer
+              price:
+                type: number
+        custom_fields:
+          type: object
+          additionalProperties: true
+
+    DealUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        amount:
+          type: number
+          minimum: 0
+        stage_id:
+          type: string
+        expected_close_date:
+          type: string
+          format: date
+        owner_id:
+          type: string
+        custom_fields:
+          type: object
+          additionalProperties: true
+
+    PipelineView:
+      type: object
+      properties:
+        pipeline:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+        stages:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              deals:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Deal'
+              total_value:
+                type: number
+              weighted_value:
+                type: number
+              deal_count:
+                type: integer
+        totals:
+          type: object
+          properties:
+            total_value:
+              type: number
+            weighted_value:
+              type: number
+            deal_count:
+              type: integer
+        forecast:
+          type: object
+          properties:
+            committed:
+              type: number
+            best_case:
+              type: number
+            pipeline:
+              type: number
+            ai_prediction:
+              type: object
+              properties:
+                predicted_amount:
+                  type: number
+                confidence:
+                  type: number
+
+    PaymentIntent:
+      type: object
+      properties:
+        id:
+          type: string
+          example: pi_abc123def456
+        amount:
+          type: integer
+          description: Amount in cents
+          example: 9999
+        currency:
+          type: string
+          example: usd
+        status:
+          type: string
+          enum: [requires_payment_method, requires_confirmation, requires_action, processing, requires_capture, canceled, succeeded]
+        client_secret:
+          type: string
+          description: Secret for frontend use
+        customer_id:
+          type: string
+        payment_method_id:
+          type: string
+        payment_method:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            card:
+              type: object
+              properties:
+                brand:
+                  type: string
+                last4:
+                  type: string
+                exp_month:
+                  type: integer
+                exp_year:
+                  type: integer
+        capture_method:
+          type: string
+          enum: [automatic, manual]
+        amount_capturable:
+          type: integer
+        amount_received:
+          type: integer
+        next_action:
+          type: object
+          properties:
+            type:
+              type: string
+            redirect_to_url:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+                return_url:
+                  type: string
+                  format: uri
+        charges:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              amount:
+                type: integer
+              status:
+                type: string
+              receipt_url:
+                type: string
+                format: uri
+        metadata:
+          type: object
+          additionalProperties: true
+        receipt_email:
+          type: string
+          format: email
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+
+    PaymentIntentCreate:
+      type: object
+      required:
+        - amount
+        - currency
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+          description: Amount in cents
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        customer_id:
+          type: string
+        payment_method_types:
+          type: array
+          items:
+            type: string
+          default: [card]
+        capture_method:
+          type: string
+          enum: [automatic, manual]
+          default: automatic
+        metadata:
+          type: object
+          additionalProperties: true
+        receipt_email:
+          type: string
+          format: email
+
+    Refund:
+      type: object
+      properties:
+        id:
+          type: string
+          example: re_xyz789
+        payment_intent_id:
+          type: string
+        charge_id:
+          type: string
+        amount:
+          type: integer
+          description: Refund amount in cents
+        currency:
+          type: string
+        status:
+          type: string
+          enum: [pending, succeeded, failed, canceled]
+        reason:
+          type: string
+          enum: [duplicate, fraudulent, requested_by_customer]
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+
+    RefundCreate:
+      type: object
+      required:
+        - payment_intent_id
+      properties:
+        payment_intent_id:
+          type: string
+        charge_id:
+          type: string
+        amount:
+          type: integer
+          minimum: 1
+          description: Amount to refund in cents (defaults to full amount)
+        reason:
+          type: string
+          enum: [duplicate, fraudulent, requested_by_customer]
+        metadata:
+          type: object
+          additionalProperties: true
+
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: string
+          example: sub_def456
+        customer_id:
+          type: string
+        plan:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            amount:
+              type: integer
+            currency:
+              type: string
+            interval:
+              type: string
+              enum: [day, week, month, year]
+            interval_count:
+              type: integer
+        status:
+          type: string
+          enum: [active, past_due, unpaid, canceled, incomplete, incomplete_expired, trialing, paused]
+        current_period_start:
+          $ref: '#/components/schemas/Timestamp'
+        current_period_end:
+          $ref: '#/components/schemas/Timestamp'
+        trial_start:
+          $ref: '#/components/schemas/Timestamp'
+        trial_end:
+          $ref: '#/components/schemas/Timestamp'
+        cancel_at_period_end:
+          type: boolean
+        canceled_at:
+          $ref: '#/components/schemas/Timestamp'
+        cancel_at:
+          $ref: '#/components/schemas/Timestamp'
+        default_payment_method_id:
+          type: string
+        latest_invoice:
+          type: object
+          properties:
+            id:
+              type: string
+            amount_due:
+              type: integer
+            status:
+              type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          $ref: '#/components/schemas/Timestamp'
+
+    SubscriptionCreate:
+      type: object
+      required:
+        - customer_id
+        - plan_id
+        - payment_method_id
+      properties:
+        customer_id:
+          type: string
+        plan_id:
+          type: string
+        payment_method_id:
+          type: string
+        trial_period_days:
+          type: integer
+          minimum: 0
+        billing_cycle_anchor:
+          type: string
+          format: date-time
+        proration_behavior:
+          type: string
+          enum: [create_prorations, none, always_invoice]
+          default: create_prorations
+        metadata:
+          type: object
+          additionalProperties: true
+
+    SubscriptionUpdate:
+      type: object
+      properties:
+        plan_id:
+          type: string
+        payment_method_id:
+          type: string
+        proration_behavior:
+          type: string
+          enum: [create_prorations, none, always_invoice]
+        billing_cycle_anchor:
+          type: string
+          enum: [now, unchanged]
+        metadata:
+          type: object
+          additionalProperties: true
