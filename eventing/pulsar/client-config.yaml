@@ -1,0 +1,11 @@
+pulsar:
+  broker_url: pulsar://pulsar-broker.pulsar.svc.cluster.local:6650
+  http_url: http://pulsar-broker.pulsar.svc.cluster.local:8080
+  tenant: billyronks
+  namespace: sase-sdwan
+  producers:
+    - topic: persistent://billyronks/sase-sdwan/command
+    - topic: persistent://billyronks/sase-sdwan/event
+  consumers:
+    - topic: persistent://billyronks/sase-sdwan/audit
+      subscription: sase-sdwan-svc-sub
