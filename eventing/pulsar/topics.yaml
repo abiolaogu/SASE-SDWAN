@@ -1,0 +1,11 @@
+tenant: billyronks
+namespace: sase-sdwan
+topics:
+  - name: persistent://billyronks/sase-sdwan/command
+    partitions: 6
+  - name: persistent://billyronks/sase-sdwan/event
+    partitions: 6
+  - name: persistent://billyronks/sase-sdwan/audit
+    partitions: 6
+  - name: persistent://billyronks/global/observability
+    partitions: 6
